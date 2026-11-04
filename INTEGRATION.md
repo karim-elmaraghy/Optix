@@ -5,6 +5,35 @@ This branch combines PR #4 (9068273), PR #5 (4eee925), and PR #6
 lives in `optiloop/application.py`, `optiloop/integration.py`, and `app.py`.
 No benchmark JSON keys or rejection-log schemas were changed.
 
+## Reported real T4 tuning findings: calibration blocked
+
+Owner-supplied Colab results (not independently rerun by Codex, and not
+converted into measured result JSON from this narrative):
+
+| Profile | Reached generation cap | Conservative truncation flag |
+|---|---:|---:|
+| default_fp16_sdpa_b1 | 8/20 at 128 tokens | 40% |
+| fp16_sdpa_b1_cap64 | 10/20 at 64 tokens | 50% |
+| fp16_sdpa_b4 | 8/20 at 128 tokens | 40% |
+| fp16_sdpa_b8 | 7/20 at 128 tokens | 35% |
+
+Reaching the cap is a conservative flag, not proof that a sentence was cut.
+Under the existing strict policy it still rejects the output. **Calibration
+cannot proceed with this default baseline:** calibrate() raises
+CalibrationBlocked with doc-level truncation diagnostics. The application
+records state=blocked and winner=null, displays the reason, and does not call
+the search agent. It does not discard those eight documents or calibrate
+against only the remaining twelve. No margin or threshold was changed.
+
+Cap64 is not quality-validated. Batch 4 and 8 still fail T5 independently of
+truncation; their raw speedups are not approved. **No configuration has passed
+all quality requirements.** The honest demo is the integrated measured-results
+viewer and explicit blocked/rejected decisions, not an approved speedup claim.
+Proceeding with calibration requires owner-approved resolution and new valid
+baseline artifacts; this integration does not change token caps, prompts,
+decoding or benchmark methodology. Obtain/commit the original Colab artifact
+files before displaying these narrative findings as measured dashboard rows.
+
 ## Local CPU verification and dashboard
 
 ```sh

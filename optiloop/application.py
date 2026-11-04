@@ -11,7 +11,7 @@ import uuid
 
 from .agent import execution_reasons, optimize
 from .integration import batching_reasons, make_evaluator, select_winner
-from .validator import calibrate, validate
+from .validator import CalibrationBlocked, calibrate, validate
 
 
 def write_json(path, value):
@@ -82,7 +82,11 @@ def run_optimization(results_dir='results', budget=8, *, runner=None, workload=N
         write_json(session / 'session.json', dict(kind=kind, state='complete',
                    winner=winner, gpu_verified=False, activation='unavailable: no persistent runtime'))
     except Exception as exc:
-        write_json(session / 'session.json', dict(kind=kind, state='failed', error=type(exc).__name__))
+        status = dict(kind=kind, state='failed', error=type(exc).__name__, winner=None)
+        if isinstance(exc, CalibrationBlocked):
+            status.update(state='blocked', reasons=exc.reasons, diagnostics=exc.diagnostics,
+                          message=str(exc))
+        write_json(session / 'session.json', status)
         if kind == 'measured':
             write_json(root / 'current_session.json', dict(directory=session.name))
         raise

@@ -287,6 +287,7 @@ def load_dashboard_data(results_dir: Path = RESULTS_DIR) -> dict[str, Any]:
         errors.append(f"Could not load dashboard apply details: {error}")
 
     return {
+        'session_status': metadata,
         "confirmation": _read_json(results_dir / 'heldout' / 'confirmation.json')
         if (results_dir / 'heldout' / 'confirmation.json').is_file() else {},
         "benchmarks": benchmarks,
@@ -591,6 +592,9 @@ def build_dashboard_view(data: dict[str, Any]) -> dict[str, Any]:
             banner += " Agent log: not run or unavailable."
     if data["errors"]:
         banner += "\n\n**Data loading errors:** " + " | ".join(data["errors"])
+    session_status = data.get('session_status') or {}
+    if session_status.get('state') == 'blocked':
+        banner += '\n\n**Calibration BLOCKED:** ' + session_status.get('message', 'invalid baseline outputs') + '. No accepted winner.'
     banner += ('\n\n**Raw speed is not approval.** Reported T4 batch-4 and batch-8 runs failed T5; '
                'their raw speedups are not quality-approved. Integrated search requires per-document F1 >= 0.95. '
                'GPU activation/rollback remains unverified.')
@@ -859,6 +863,9 @@ def optimize_action():
         session = run_optimization(RESULTS_DIR)
         return 'Optimization completed. Results: ' + str(session) + '. Refresh results; fallback sources remain labeled.'
     except Exception as exc:
+        from optiloop.validator import CalibrationBlocked
+        if isinstance(exc, CalibrationBlocked):
+            return str(exc) + '. No search or winner selection occurred. Baseline diagnostics are saved in session.json.'
         return 'Optimization stopped: ' + type(exc).__name__ + '. Check saved failure/rejection JSON. MODEL_API_KEY must be set; no key is displayed.'
     finally:
         RUN_LOCK.release()

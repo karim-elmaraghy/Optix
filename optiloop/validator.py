@@ -59,12 +59,29 @@ class Calibration:
     tuning_ids: tuple
 
 
+class CalibrationBlocked(ValueError):
+    """Invalid baseline artifacts cannot establish a quality tolerance."""
+    def __init__(self, diagnostics):
+        self.diagnostics = diagnostics
+        self.reasons = sorted({r for d in diagnostics for r in d['reasons']})
+        super().__init__('Calibration blocked: invalid baseline outputs (' + ', '.join(self.reasons) + ')')
+
+
 def calibrate(default, naive, margin=0.02):
     if not math.isfinite(margin) or not 0 <= margin < 1:
         raise ValueError('margin must be finite in [0,1)')
     base, fp32 = index_docs(default, 'tuning'), index_docs(naive, 'tuning')
     if base.keys() != fp32.keys():
         raise ValueError('calibration document mismatch')
+    diagnostics = []
+    for label, docs, config in (('competent_default', base, default['config']),
+                                ('naive', fp32, naive['config'])):
+        for key, doc in docs.items():
+            reasons = invalid_reasons(doc, config)
+            if reasons:
+                diagnostics.append(dict(baseline=label, doc_id=key, reasons=reasons))
+    if diagnostics:
+        raise CalibrationBlocked(diagnostics)
     overlap, gold, order = [], [], []
     for key, d in base.items():
         n = fp32[key]
