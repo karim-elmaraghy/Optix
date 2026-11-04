@@ -10,7 +10,9 @@ Run: python -m pytest tests/test_workload.py -x -q
 import pytest
 
 from optiloop.workload import (
+    DATASET_CONFIG,
     DATASET_NAME,
+    DATASET_SPLIT,
     MAX_WORDS,
     MIN_WORDS,
     TARGET_WORDS,
@@ -40,7 +42,10 @@ def synthetic_raw(n_docs=45):
 
 
 def test_dataset_identity():
-    assert DATASET_NAME == "cnn_dailymail"
+    # Namespaced Hub repo: bare "cnn_dailymail" is an invalid HF URI.
+    assert DATASET_NAME == "abisee/cnn_dailymail"
+    assert DATASET_CONFIG == "3.0.0"
+    assert DATASET_SPLIT == "test"
 
 
 def test_count_words():

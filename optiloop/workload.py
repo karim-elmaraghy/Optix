@@ -1,6 +1,8 @@
 """OptiLoop workload: real CNN/DailyMail summarization documents.
 
-Dataset: Hugging Face ``cnn_dailymail`` (config ``"3.0.0"``, ``test`` split).
+Dataset: Hugging Face ``abisee/cnn_dailymail`` (config ``"3.0.0"``,
+``test`` split). The unnamespaced ``cnn_dailymail`` id is an invalid Hub
+URI on current ``datasets``/Hub versions; the namespaced repo is canonical.
 Selection is deterministic: scan the test split in fixed index order, skip
 articles under 150 words, truncate survivors to 150-250 words (target 200),
 and take 20 tuning docs followed by 10 held-out docs. The two splits are
@@ -16,8 +18,8 @@ Pure helpers (unit-testable on synthetic docs, no downloads):
 ``select_documents``, ``split_documents``.
 """
 
-# Dataset identity (acceptance check greps for the literal dataset name).
-DATASET_NAME = "cnn_dailymail"
+# Dataset identity (namespaced Hub repo; contains the literal cnn_dailymail).
+DATASET_NAME = "abisee/cnn_dailymail"
 DATASET_CONFIG = "3.0.0"
 DATASET_SPLIT = "test"
 
