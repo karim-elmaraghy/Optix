@@ -16,6 +16,12 @@ level imports only the standard library. ``torch`` / ``transformers`` /
 Pure helpers (unit-testable on synthetic docs, no downloads):
 ``count_words``, ``truncate_words``, ``build_prompt``, ``is_eligible``,
 ``select_documents``, ``split_documents``.
+
+Prompt format V2 (owner-authorized): the benchmark renders each doc's
+``messages`` through the model's official chat template with a generation
+prompt (``format_chat_prompt``). V1 fed the raw instruction text as a
+plain completion and produced the preserved V1 results; never compare
+V2 candidates against V1 baselines.
 """
 
 # Dataset identity (namespaced Hub repo; contains the literal cnn_dailymail).
@@ -33,6 +39,11 @@ TARGET_WORDS = 200
 SEED = 42
 
 PROMPT_TEMPLATE = "Summarize in 3 sentences: {doc}"
+
+# Prompt format version. V1: raw completion text (pre-chat-template runs).
+# V2: official Llama chat template + generation prompt. Never compare V2
+# candidates against V1 baselines; rerun baselines under V2 first.
+PROMPT_VERSION = "v2-chat-template"
 
 
 def count_words(text):
@@ -57,8 +68,24 @@ def truncate_words(text, max_words=TARGET_WORDS):
 
 
 def build_prompt(doc_text):
-    """The one summarization prompt used for every profile (R1 fairness)."""
+    """User-message content: the one instruction for every profile (R1)."""
     return PROMPT_TEMPLATE.format(doc=doc_text)
+
+
+def build_messages(doc_text):
+    """Chat messages wrapping ``build_prompt`` (V2 prompt format).
+
+    The benchmark renders these through the model's official tokenizer
+    chat template with a generation prompt. V1 fed the raw content as a
+    plain completion; V1 results are never compared against V2 baselines.
+    """
+    return [{"role": "user", "content": build_prompt(doc_text)}]
+
+
+def format_chat_prompt(tokenizer, doc_text):
+    """Render ``doc_text`` via the tokenizer's official chat template."""
+    return tokenizer.apply_chat_template(
+        build_messages(doc_text), tokenize=False, add_generation_prompt=True)
 
 
 def is_eligible(article, min_words=MIN_WORDS):
@@ -74,6 +101,7 @@ def _make_doc(source_index, article, gold_summary, split):
         "source_index": source_index,
         "article": truncated,
         "prompt": build_prompt(truncated),
+        "messages": build_messages(truncated),
         "gold_summary": gold_summary,
         "n_words": count_words(truncated),
     }

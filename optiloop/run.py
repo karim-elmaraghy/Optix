@@ -22,7 +22,7 @@ from .benchmark import run_config, run_profiles, save_benchmark
 from .profiles import (COMPILE_PROFILE, DEFAULT_PROFILE, GATE1_PROFILES,
                        NAIVE_PROFILE, PROFILES, SPACE, config_slug,
                        profile_config)
-from .workload import load_workload
+from .workload import PROMPT_VERSION, load_workload
 
 BATCH_F1_THRESHOLD = 0.95
 
@@ -158,6 +158,8 @@ def check_batching(outputs_by_name,
 def run_gate1(args, with_compile=False, demo=False):
     """Gate 1 (T7 input): baselines + batch/cap profiles on tuning docs."""
     print_env_info()
+    print("prompt format: %s (never compare against V1 baselines)"
+          % PROMPT_VERSION)
     tuning, _heldout = load_workload()
     print("tuning docs: %d (150-250 words, cnn_dailymail test)"
           % len(tuning))
@@ -200,6 +202,7 @@ def _print_headline(items):
 
 def run_grid(args):
     """Full 24-config SPACE sweep on tuning docs; one cached table."""
+    print("prompt format: %s" % PROMPT_VERSION)
     tuning, _heldout = load_workload()
     named = [(config_slug(config), config) for config in SPACE]
     print("grid: %d configs x %d tuning docs, repeats=%d"

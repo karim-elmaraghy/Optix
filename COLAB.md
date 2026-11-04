@@ -1,5 +1,13 @@
 # OptiLoop — Google Colab T4 instructions (Gate 1)
 
+> **Prompt V2 (current):** prompts are rendered through the Llama 3.2
+> chat template with a generation prompt. Earlier V1 runs fed raw text
+> and are preserved as failed-validation results; **never compare V2
+> candidates against V1 baselines** — rerun the baselines under V2.
+> Verify formatting before benchmarking (prints one rendered prompt;
+> must start with `<|begin_of_text|>` once and end with the assistant
+> header): `python -c "from optiloop.benchmark import load_model, render_prompt; from optiloop.profiles import profile_config; from optiloop.workload import load_workload; t,_=load_workload(); b=load_model(profile_config('default_fp16_sdpa_b1')); print(repr(render_prompt(b['tokenizer'], t[0])[:400]))"`
+
 Status: GPU code is **written, not run**. Nothing is a result until you run
 Gate 1 below on a real T4 and paste the output back. Do not quote any
 docs/s or J/doc number that did not come out of your own run's
