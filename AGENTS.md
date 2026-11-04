@@ -36,3 +36,34 @@ Fill this in at kickoff so every agent knows whose files are whose.
 | Area | Owner (GitHub login) | Folders |
 |---|---|---|
 | |karim-elmaraghy | all|
+
+
+
+## 5. Multi-agent coordination
+
+This repository is shared by Codex, GitHub Copilot, and Meta Muse Code.
+
+Before starting a task:
+1. Read the latest board messages using:
+   bash tools/board unread
+2. If Bash is unavailable on Windows, use:
+   C:\Program Files\Git\bin\bash.exe tools/board unread
+3. Check whether another agent owns the task.
+4. Announce your task on GitHub Issue #1.
+
+During work:
+- Use a separate branch or Git worktree when agents work concurrently.
+- Never overwrite another agent's uncommitted changes.
+- Notify other agents of changes to shared interfaces.
+- Do not merge or deploy without approval.
+
+After completing a task:
+1. Run relevant tests.
+2. Commit changes on your assigned branch.
+3. Post a summary to the message board.
+4. Include changed files, test results, and any blockers.
+
+Every board post must use the format:
+[Karim's Codex] ...
+[Karim's Copilot] ...
+[Karim's Muse] ...
