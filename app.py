@@ -45,8 +45,19 @@ body, .gradio-container {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
 }
 .gradio-container {
-  max-width: 1120px !important;
-  padding: 34px 32px 64px !important;
+  width: 100% !important;
+  max-width: none !important;
+  padding: 28px 0 64px !important;
+}
+.gradio-container > .main {
+  width: 100% !important;
+  max-width: 1440px !important;
+}
+.gradio-container > main {
+  width: calc(100% - 80px) !important;
+  max-width: 1360px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
 }
 footer { display: none !important; }
 h1, h2, h3, p { color: var(--ink) !important; }
@@ -135,7 +146,12 @@ h3 { font-size: 1rem !important; font-weight: 600 !important; }
   color: var(--ink) !important;
 }
 @media (max-width: 720px) {
-  .gradio-container { padding: 20px 14px 40px !important; }
+  .gradio-container { padding: 20px 0 40px !important; }
+  .gradio-container > .main { max-width: none !important; }
+  .gradio-container > main {
+    width: calc(100% - 32px) !important;
+    max-width: none !important;
+  }
   h1 { font-size: 2rem !important; }
 }
 """
@@ -813,7 +829,7 @@ def create_app() -> Any:
                     elem_classes=["subtitle"],
                 )
             with gr.Column(scale=1, min_width=190):
-                refresh = gr.Button("Refresh saved results", variant="primary")
+                refresh = gr.Button("Refresh saved results", variant="secondary")
         banner = gr.Markdown(elem_classes=["notice"])
         snapshot_state = gr.State()
 
