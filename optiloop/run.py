@@ -69,8 +69,13 @@ def _fmt(value, digits=3):
     return "n/a" if value is None else ("%.*f" % (digits, value))
 
 
-def print_table(items):
-    """Headline table: profile, docs/s, J/doc, speedups vs both baselines."""
+def print_table(items, consoles=None):
+    """Headline table: profile, docs/s, J/doc, speedups vs both baselines.
+
+    ``consoles`` maps profile name -> benchmark console dict; its
+    ``model_loaded`` flag distinguishes "weights never loaded" from
+    "weights loaded, generation failed" (the two must not be conflated).
+    """
     by_name = {item["profile_name"]: item for item in items}
     default = by_name.get(DEFAULT_PROFILE, {})
     naive = by_name.get(NAIVE_PROFILE, {})
@@ -98,9 +103,15 @@ def print_table(items):
             _fmt(speedup(item, default), 2),
             _fmt(speedup(item, naive), 2), item["noisy"]))
     loaded = [i["profile_name"] for i in items if i["status"] == "success"]
-    print("model load: %s" % (
-        "confirmed (%s)" % ", ".join(loaded) if loaded
-        else "FAILED for every profile (see errors above)"))
+    weights_loaded = bool(consoles) and any(
+        c.get("model_loaded") for c in consoles.values())
+    if loaded:
+        print("model load: confirmed (%s)" % ", ".join(loaded))
+    elif weights_loaded:
+        print("model load: confirmed (weights loaded); generation failed "
+              "for every profile (see errors above)")
+    else:
+        print("model load: FAILED for every profile (see errors above)")
 
 
 def check_batching(outputs_by_name, batch_profile="fp16_sdpa_b4"):
@@ -146,11 +157,11 @@ def run_gate1(args, with_compile=False, demo=False):
     if with_compile:
         names.append(COMPILE_PROFILE)
     named = [(name, profile_config(name)) for name in names]
-    items, outputs_by_name, _consoles = run_profiles(
+    items, outputs_by_name, consoles = run_profiles(
         named, tuning, split="tuning", repeats=args.repeats,
         results_dir=args.results_dir)
     path = save_benchmark(items, args.results_dir)
-    print_table(items)
+    print_table(items, consoles)
     print("saved: %s" % path)
     if demo:
         _print_headline(items)
@@ -185,14 +196,14 @@ def run_grid(args):
     named = [(config_slug(config), config) for config in SPACE]
     print("grid: %d configs x %d tuning docs, repeats=%d"
           % (len(named), len(tuning), args.repeats))
-    items, _outputs, _consoles = run_profiles(
+    items, _outputs, consoles = run_profiles(
         named, tuning, split="tuning", repeats=args.repeats,
         results_dir=args.results_dir)
     path = save_benchmark(items, args.results_dir)
     succeeded = sum(1 for i in items if i["status"] == "success")
     print("grid done: %d/%d succeeded; cached table: %s"
           % (succeeded, len(items), path))
-    print_table(items)
+    print_table(items, consoles)
     return 0
 
 
@@ -206,11 +217,11 @@ def run_heldout(args):
     named = [(name, profile_config(name)) for name in names]
     print("heldout: %s on %d docs, repeats=%d"
           % (names, len(heldout), args.repeats))
-    items, _outputs, _consoles = run_profiles(
+    items, _outputs, consoles = run_profiles(
         named, heldout, split="heldout", repeats=args.repeats,
         results_dir=args.results_dir)
     path = save_benchmark(items, args.results_dir)
-    print_table(items)
+    print_table(items, consoles)
     print("saved: %s" % path)
     return 0
 

@@ -286,8 +286,28 @@ def maybe_compile(bundle, config, sample_prompts):
         bundle["static_cache"] = "dynamic_fallback"
 
 
+def build_generate_kwargs(config, pad_token_id):
+    """Extra ``model.generate`` kwargs, WITHOUT ``attention_mask``.
+
+    The tokenizer batch already carries ``attention_mask`` inside
+    ``inputs``; repeating it here makes ``generate(**inputs, **kwargs)``
+    raise ``TypeError: got multiple values for keyword argument
+    'attention_mask'``. The mask is supplied exactly once, via ``inputs``
+    (left padding + pad token are set up in ``load_model``).
+    """
+    return {
+        "max_new_tokens": config["max_new_tokens"],
+        "do_sample": False,
+        "pad_token_id": pad_token_id,
+    }
+
+
 def _generate_batch(bundle, model, prompts, config, past_key_values=None):
-    """One greedy generation call; returns (texts, token_counts, max_batch)."""
+    """One greedy generation call; returns (texts, token_counts, max_batch).
+
+    Used for every batch size (1, 4, 8) and for the compile warmup, so the
+    single ``generate`` call below is the only generation path.
+    """
     import torch
 
     tokenizer = bundle["tokenizer"]
@@ -295,12 +315,7 @@ def _generate_batch(bundle, model, prompts, config, past_key_values=None):
     inputs = tokenizer(prompts, return_tensors="pt", padding=True)
     inputs = {key: value.to(device) for key, value in inputs.items()}
     prompt_len = inputs["input_ids"].shape[1]
-    kwargs = {
-        "max_new_tokens": config["max_new_tokens"],
-        "do_sample": False,
-        "attention_mask": inputs["attention_mask"],
-        "pad_token_id": tokenizer.pad_token_id,
-    }
+    kwargs = build_generate_kwargs(config, tokenizer.pad_token_id)
     if past_key_values is not None:
         kwargs["past_key_values"] = past_key_values
     with torch.no_grad():
@@ -397,7 +412,7 @@ def run_config(config, docs=None, profile_name="custom", split="tuning",
                "docs": []}
     console = {"recompilations": None, "break_even_docs": None,
                "static_cache_used": None, "energy_poll_joules_per_doc": None,
-               "energy_crosscheck_ok": None}
+               "energy_crosscheck_ok": None, "model_loaded": False}
     own_meter = meter is None
     meter = meter or EnergyMeter()
     bundle = None
@@ -414,6 +429,9 @@ def run_config(config, docs=None, profile_name="custom", split="tuning",
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
         bundle = load_model(requested, model_id=model_id, device=device)
+        # Weights are in memory from here on; a later failure is an
+        # inference failure, not a load failure (report stays honest).
+        console["model_loaded"] = True
         prompts = [doc["prompt"] for doc in docs]
         maybe_compile(bundle, requested, prompts)
         console["static_cache_used"] = bundle["static_cache"]
