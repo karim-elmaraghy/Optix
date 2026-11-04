@@ -17,7 +17,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parent
-RESULTS_DIR = ROOT / "results"
+RESULTS_DIR = Path(os.environ.get('TUNIX_RESULTS_DIR', str(ROOT / 'results'))).resolve()
 RUN_LOCK = threading.Lock()
 SAMPLE_DIR = RESULTS_DIR / "sample"
 

@@ -1,5 +1,22 @@
 # Tunix — reproduce the submission demo
 
+**Install the local agent in your VS Code terminal:**
+
+```sh
+python -m pip install -e .
+tunix doctor
+tunix init
+tunix benchmark
+tunix optimize
+tunix report
+```
+
+Live commands require the supported CUDA T4 environment, GPU dependencies,
+gated model access and credentials. For the no-GPU saved-results demo use
+`tunix report --replay --port 7865`. [Developer installation and exact command
+behavior](DEVELOPER.md) includes environment setup, other-project installation,
+exit codes, limitations and secure credential handling. No PyPI publication.
+
 Tunix is an AI-powered GPU inference optimization agent, with a lightweight
 landing page and interactive optimization workbench. It measures
 Llama-3.2-1B-Instruct inference on a Tesla T4 and separates

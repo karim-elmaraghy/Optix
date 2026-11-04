@@ -51,7 +51,7 @@ def stats_and_charts(data):
     cards = [('RAW THROUGHPUT', f'{speed:.2f}×' if speed else '—', 'Batch 8 vs competent default · not approval'),
              ('ENERGY REDUCTION', f'{energy:.1f}%' if energy is not None else '—', 'Measured joules per document'),
              ('QUALITY APPROVAL', 'Blocked' if data.get('session_status', {}).get('state') == 'blocked' else 'Pending', 'No configuration is approved'),
-             ('EVIDENCE', 'Measured' if measured else 'Sample', 'Saved T4 replay · not live Meta output')]
+             ('EVIDENCE', 'Measured' if measured else 'Sample', 'Saved T4 replay · not live Meta output' if data.get('artifact_validation') else 'Recorded project evidence · not a new run')]
     stats = '<div class="stat-grid">' + ''.join(
         f'<div class="stat"><div class="label">{a}</div><div class="value {"amber" if i==2 else ""}">{b}</div><div class="detail">{c}</div></div>'
         for i, (a,b,c) in enumerate(cards)) + '</div>'
@@ -188,7 +188,8 @@ def export_candidate(snapshot):
 def create_workbench():
     import app
     import gradio as gr
-    initial = app.load_dashboard_data(follow_session=False)
+    default_mode = LIVE if os.environ.get('TUNIX_REPORT_MODE') == 'project' else REPLAY
+    initial = app.load_dashboard_data(ROOT/'results' if default_mode == REPLAY else app.RESULTS_DIR, follow_session=default_mode == LIVE)
     view = app.build_dashboard_view(initial)
     stats, charts = stats_and_charts(initial)
     with gr.Blocks(title='Tunix · Inference optimization', analytics_enabled=False) as demo:
@@ -214,7 +215,7 @@ def create_workbench():
             with gr.Row(equal_height=True):
                 with gr.Column(scale=7, elem_classes=['config-card']):
                     gr.Markdown('### Configure your optimization')
-                    mode = gr.Radio([REPLAY,LIVE], value=REPLAY, label='Execution environment')
+                    mode = gr.Radio([REPLAY,LIVE], value=default_mode, label='Execution environment')
                     with gr.Row():
                         model = gr.Dropdown([( 'Llama 3.2 · 1B Instruct', MODEL)], value=MODEL, label='Supported model', allow_custom_value=False)
                         workload = gr.Dropdown([WORKLOAD], value=WORKLOAD, label='Workload', allow_custom_value=False)
@@ -226,11 +227,11 @@ def create_workbench():
                     with gr.Row():
                         optimize_button = gr.Button('Optimize', variant='primary')
                         replay_button = gr.Button('Load verified T4 benchmark', variant='secondary')
-                    operation = gr.Textbox(value='Saved-results mode. No Meta request or GPU experiment has been made.', label='Run status', interactive=False, lines=2)
+                    operation = gr.Textbox(value=('Saved-results mode. No Meta request or GPU experiment has been made.' if default_mode == REPLAY else 'Project results loaded. No new experiment starts until Optimize is requested.'), label='Run status', interactive=False, lines=2)
                 with gr.Column(scale=4, elem_classes=['status-card']):
                     status = gr.HTML(status_panel(initial))
                     detect_button = gr.Button('Refresh server environment', size='sm')
-            source = gr.HTML('<div class="source-note">◉ &nbsp; SAVED T4 REPLAY &nbsp; / &nbsp; V2 chat template &nbsp; / &nbsp; No live Meta optimization implied</div>')
+            source = gr.HTML('<div class="source-note">'+('SAVED T4 REPLAY · no live Meta optimization' if default_mode == REPLAY else 'PROJECT RUN EVIDENCE · benchmark execution and Meta search are separate; no new run implied')+'</div>')
             stat_cards = gr.HTML(stats)
             with gr.Tabs():
                 with gr.Tab('Compare'):
@@ -259,7 +260,7 @@ def create_workbench():
         gr.HTML('<div class="footer-note"><span>Tunix · intelligence, measured.</span><span>T4 / Llama MVP · no automatic activation</span></div>')
 
         def render(current_mode=REPLAY):
-            data = app.load_dashboard_data(follow_session=current_mode == LIVE)
+            data = app.load_dashboard_data(ROOT/'results' if current_mode == REPLAY else app.RESULTS_DIR, follow_session=current_mode == LIVE)
             current = app.build_dashboard_view(data)
             cards, graphs = stats_and_charts(data)
             label = ('SAVED T4 REPLAY · no live Meta optimization' if current_mode == REPLAY else 'CONNECTED T4 MODE · evidence below is saved until a new run completes')
