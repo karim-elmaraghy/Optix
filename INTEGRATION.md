@@ -5,6 +5,41 @@ This branch combines PR #4 (9068273), PR #5 (4eee925), and PR #6
 lives in `optiloop/application.py`, `optiloop/integration.py`, and `app.py`.
 No benchmark JSON keys or rejection-log schemas were changed.
 
+## Final readiness and V2 handoff
+
+Readiness check: the integrated Gradio application was actually launched on
+localhost and returned HTTP 200, then was closed. Real artifact loading is
+**not verified**: only sample JSON is available in the integration workspace;
+no Colab benchmark/output/rejection artifacts were found on the pushed Muse
+branch. Narrative counts above are not substitutes for those files.
+MODEL_API_KEY was absent, so the live API smoke is **untested**, not passed.
+
+For the blocked-calibration demo, first copy the ORIGINAL downloaded
+`benchmark_*.json`, `outputs_*.json` and any actual `agent_log.json` into the
+checkout's `results/` directory. Keep V1/V2 evidence in separate directories;
+do not overwrite it with synthetic samples. Run `python app.py`, refresh,
+show measured-only or rejected rows and raw speeds, explain the reported
+truncation/T5 failures and show that no winner is selected. If an actual
+integrated run blocks, its saved `session.json` displays Calibration BLOCKED
+with reasons. Optimize cannot label a no-winner run successful, and Check
+apply readiness always reports no activation/runtime rollback. The results
+viewer starts without a GPU or Meta credentials; do not click Optimize merely
+to show saved data. If original files are absent, demonstrate sample/not-run
+state honestly and mark real-data verification pending.
+
+Muse's pushed V2 commit `6ac0558` was inspected read-only; it is not yet
+included in this integration branch. It adds workload `messages` and
+`PROMPT_VERSION`, and renders the official chat template in the benchmark;
+`run_config` arguments and result schemas remain compatible. The adapter
+preserves entire workload documents including `article`/`messages`. After
+owner review, bring that commit into the integration branch only, restart
+the Python process, run the combined CPU suite and start a NEW optimization
+session with fresh default and naive baselines. Never reuse V1 calibration
+or compare V2 candidates to V1 outputs. Session metadata now records prompt
+version, and held-out confirmation refuses cross-version sessions before
+GPU work. Existing unversioned sessions are treated as V1. Validator
+thresholds, token caps and benchmark methodology were not changed here.
+
 ## Reported real T4 tuning findings: calibration blocked
 
 Owner-supplied Colab results (not independently rerun by Codex, and not

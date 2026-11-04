@@ -18,6 +18,11 @@ def write_json(path, value):
     Path(path).write_text(json.dumps(value, indent=2), encoding='utf-8')
 
 
+def prompt_version():
+    from . import workload as module
+    return getattr(module, 'PROMPT_VERSION', 'v1-raw')
+
+
 def run_optimization(results_dir='results', budget=8, *, runner=None, workload=None,
                      completion=None, space=None):
     """Run both real tuning baselines and the bounded optimization loop.
@@ -46,7 +51,8 @@ def run_optimization(results_dir='results', budget=8, *, runner=None, workload=N
     # Dependency-injected runs are explicitly synthetic and never selected by
     # the normal dashboard as measured sessions.
     kind = 'synthetic' if synthetic else 'measured'
-    write_json(session / 'session.json', dict(kind=kind, state='running', gpu_verified=False))
+    version = prompt_version()
+    write_json(session / 'session.json', dict(kind=kind, state='running', gpu_verified=False, prompt_version=version))
     items = []
     def run(config, docs, **kwargs):
         outcome = runner(config, docs, **kwargs)
@@ -80,9 +86,10 @@ def run_optimization(results_dir='results', budget=8, *, runner=None, workload=N
             default_benchmark=items[0],
             heldout_ids=[d['doc_id'] for d in heldout]))
         write_json(session / 'session.json', dict(kind=kind, state='complete',
-                   winner=winner, gpu_verified=False, activation='unavailable: no persistent runtime'))
+                   winner=winner, gpu_verified=False, prompt_version=version,
+                   activation='unavailable: no persistent runtime'))
     except Exception as exc:
-        status = dict(kind=kind, state='failed', error=type(exc).__name__, winner=None)
+        status = dict(kind=kind, state='failed', error=type(exc).__name__, winner=None, prompt_version=version)
         if isinstance(exc, CalibrationBlocked):
             status.update(state='blocked', reasons=exc.reasons, diagnostics=exc.diagnostics,
                           message=str(exc))
@@ -99,6 +106,8 @@ def confirm_heldout(session_dir, *, runner=None, workload=None):
     """Confirm winner + both baselines, without claiming activation/rollback."""
     session = Path(session_dir)
     meta = json.loads((session / 'session.json').read_text(encoding='utf-8'))
+    if meta.get('prompt_version', 'v1-raw') != prompt_version():
+        raise ValueError('prompt version changed; rerun tuning and both baselines before heldout confirmation')
     winner = meta.get('winner')
     if not winner:
         raise ValueError('no validated winner to confirm')

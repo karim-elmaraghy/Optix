@@ -107,6 +107,13 @@ class ApplicationTests(unittest.TestCase):
         self.assertIsNone(app._find_chosen([dict(row, winner=True)], []))
 
     def test_optimize_ui_calls_real_application_path(self):
-        with patch('optiloop.application.run_optimization', return_value=Path('measured-session')) as run:
-            self.assertIn('completed', app.optimize_action())
+        with patch('optiloop.application.run_optimization', return_value=Path('measured-session')) as run, patch('app._read_json', return_value=dict(winner=None)):
+            self.assertIn('NO validated winner', app.optimize_action())
             run.assert_called_once_with(app.RESULTS_DIR)
+
+    def test_prompt_version_mismatch_blocks_confirmation_before_gpu_work(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = run_optimization(tmp, 1, runner=runner, workload=workload, completion=completion, space=[DEFAULT])
+            with patch('optiloop.application.prompt_version', return_value='v2-chat-template'):
+                with self.assertRaisesRegex(ValueError, 'prompt version changed'):
+                    confirm_heldout(session, runner=runner, workload=workload)

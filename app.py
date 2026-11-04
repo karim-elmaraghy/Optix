@@ -861,7 +861,10 @@ def optimize_action():
         return 'Another GPU operation is running.'
     try:
         session = run_optimization(RESULTS_DIR)
-        return 'Optimization completed. Results: ' + str(session) + '. Refresh results; fallback sources remain labeled.'
+        status = _read_json(Path(session) / 'session.json')
+        if not status.get('winner'):
+            return 'Search finished; NO validated winner. Review rejection reasons in ' + str(session) + '. Nothing applied.'
+        return 'Tuning candidate selected; held-out confirmation is still required. Results: ' + str(session) + '. Nothing applied; fallback sources remain labeled.'
     except Exception as exc:
         from optiloop.validator import CalibrationBlocked
         if isinstance(exc, CalibrationBlocked):
