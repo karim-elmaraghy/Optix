@@ -1,3 +1,41 @@
+# OptiLoop — reproduce the submission demo
+
+OptiLoop measures Llama-3.2-1B-Instruct inference on a Tesla T4 and separates
+raw speed from quality approval. The committed V2 batch-8 run measured
+**5.63× raw throughput and 81.8% less energy** vs the competent FP16 batch-1
+default. T5 batching passed, but truncation blocks calibration: **no approved
+winner, held-out confirmation, or GPU apply/rollback claim**.
+
+Run the saved-results demo (Python 3.10+; no GPU or API key required):
+
+```sh
+git clone --branch integration-optiloop https://github.com/karim-elmaraghy/Optix.git
+cd Optix
+python -m pip install gradio==6.31.0
+python app.py
+```
+
+Open **http://127.0.0.1:7860**. Show the headline, then the separate T5 PASS
+and truncation rejection, the profile table and exact rejected document IDs.
+The demo reads original committed Colab JSON, not sample metrics or a live
+Meta optimization. No agent proposals were fabricated. Live Optimize is
+separate and cannot proceed through invalid baseline calibration; Apply
+reports that no persistent inference runtime is connected.
+
+Judges can audit the original files in [`results/`](results/), their hashes
+and rejection diagnostics in [`results/validation_report.json`](results/validation_report.json),
+and the exact limitations in [V2_VALIDATION.md](V2_VALIDATION.md). Reproducing
+GPU measurements requires a fresh licensed-model Colab T4 run using
+[INTEGRATION.md](INTEGRATION.md); the supplied measurements used two repeats,
+below T3's three-repeat requirement. Benchmark methodology and quality gates
+are frozen. Synthetic tests/sample data are explicitly labeled and never
+presented as measured GPU results or live Meta API output.
+
+For an existing local checkout, the integration worktree is
+`C:\Karim\Code\Personal\Optix_\.board\integration`.
+
+---
+
 # Hackathon agent board
 
 ![The hacking floor at Cal Hacks](docs/banner.jpg)

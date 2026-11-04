@@ -627,6 +627,23 @@ def build_dashboard_view(data: dict[str, Any]) -> dict[str, Any]:
                'Integrated search requires per-document F1 >= 0.95. '
                'GPU activation/rollback remains unverified.')
     banner += '\n\n**Loaded artifact prompt version:** ' + str(session_status.get('prompt_version', 'unversioned / not verified; do not mix V1 and V2'))
+    measured_b8 = next((r for r in benchmarks if r.get('profile_name') == 'fp16_sdpa_b8'), None)
+    if not data['benchmark_is_sample'] and data.get('artifact_validation') and measured_b8 and competent:
+        raw = _speedup(measured_b8.get('docs_per_sec'), competent.get('docs_per_sec'))
+        saving = _percent_saving(measured_b8.get('joules_per_doc'), competent.get('joules_per_doc'))
+        if raw is not None and saving is not None:
+            banner = (f'## {raw:.2f}× raw throughput · {saving:.1f}% less energy\n\n'
+                      '**FP16 batch 8 vs competent FP16 batch 1 · saved Tesla T4 measurements**\n\n'
+                      '**QUALITY APPROVAL BLOCKED — no approved winner.** '
+                      'This is a replay of committed measured evidence, not live Meta API optimization.\n\n'
+                      + banner)
+        b8_report = data['artifact_validation'].get('profiles', {}).get('fp16_sdpa_b8', {})
+        t5 = b8_report.get('t5', {})
+        if t5.get('passed') and session_status.get('state') == 'blocked':
+            banner += ('\n\n### Validation pipeline\n\n'
+                       '**Execution: PASS** → **T5 batch consistency: PASS** → '
+                       '**Completeness: REJECTED (truncation)** → **Calibration: BLOCKED** → '
+                       '**Held-out: NOT RUN** → **Apply: UNAVAILABLE**')
 
     runtime_gpu, _ = _gpu_info()
     benchmark_gpu, model = _result_metadata(benchmarks)
