@@ -685,6 +685,16 @@ def build_dashboard_view(data: dict[str, Any]) -> dict[str, Any]:
     if not heldout.get("decision") and event_validation:
         heldout["decision"] = "accepted" if event_validation.get("accepted") is True else "rejected"
         heldout["reason"] = "; ".join(event_validation.get("reasons", []))
+    integrated_confirmation = data.get('confirmation') or {}
+    if integrated_confirmation:
+        confirmed_validation = integrated_confirmation.get('validation', {})
+        heldout['decision'] = 'accepted' if confirmed_validation.get('accepted') is True else 'rejected'
+        heldout['reason'] = '; '.join(confirmed_validation.get('reasons', []))
+        heldout['quality_f1'], heldout['rouge_l'] = _quality_values({'_agent_validation': confirmed_validation})
+        heldout['docs_per_sec'] = integrated_confirmation.get('benchmark', {}).get('docs_per_sec')
+        heldout['joules_per_doc'] = integrated_confirmation.get('benchmark', {}).get('joules_per_doc')
+        if confirmed_validation.get('accepted') is not True:
+            chosen_name += ' (tuning candidate only; held-out rejected)'
     heldout_decision = str(heldout.get("decision") or heldout.get("status") or "").lower()
     if any(token in heldout_decision for token in ("accept", "promote", "pass")):
         heldout_summary = "Held-out confirmation: accepted in recorded results."
@@ -733,6 +743,8 @@ def build_dashboard_view(data: dict[str, Any]) -> dict[str, Any]:
         gate = "GATE 1 PASSED" if default_speedup >= 1.2 else "GATE 1 NOT PASSED"
     else:
         gate = "GATE 1 NOT RUN - winner and competent-default measurements are required"
+    if integrated_confirmation and integrated_confirmation.get('validation', {}).get('accepted') is not True:
+        gate = 'HELD-OUT REJECTED - no final approved winner'
     winner_lines.append(f"**{gate}**")
     confirmation = data.get('confirmation') or {}
     if confirmation:
