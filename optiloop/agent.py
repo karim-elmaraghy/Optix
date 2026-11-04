@@ -9,6 +9,14 @@ validator.calibrate(default_tuning, naive_tuning, margin=0.02), then wrap
 Agent A's run_config(config) to call validator.validate(outputs, default_tuning,
 calibration). Pass that adapter to optimize(SPACE, evaluate). Persist the
 returned history (or supply log_path for JSONL rejection/provenance records).
+PR #5's run_config(config, docs, profile_name=slug, split='tuning', repeats=3)
+returns {benchmark, outputs, console}; wrap it rather than passing it directly
+as evaluate. Use outcome['benchmark'] and validate(outcome['outputs'], ...).
+For a failed outcome return an explicitly rejected validation decision and
+preserve benchmark.error; failed output bundles contain no docs. Reject an
+outputs.config mismatch before validation. Saved benchmark JSON is a list;
+select exactly one matching requested_config/profile, not the entire list.
+Keep console diagnostics separate from the approved benchmark JSON schema.
 Select a winner only among accepted records using actual measured throughput.
 Call safe_apply.safe_apply with a separate HELDOUT execution adapter; do not
 reuse tuning artifacts. Calibrated values must be reported with real results.
