@@ -286,6 +286,20 @@ def maybe_compile(bundle, config, sample_prompts):
         bundle["static_cache"] = "dynamic_fallback"
 
 
+def render_prompt(tokenizer, doc):
+    """Format one workload doc via the official chat template (V2).
+
+    Falls back to wrapping the article for docs built before V2 (no
+    ``messages`` field). Same rendered prompt for every profile (R1).
+    """
+    messages = doc.get("messages")
+    if messages is None:
+        from .workload import build_messages
+        messages = build_messages(doc["article"])
+    return tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True)
+
+
 def build_generate_kwargs(config, pad_token_id):
     """Extra ``model.generate`` kwargs, WITHOUT ``attention_mask``.
 
@@ -312,7 +326,10 @@ def _generate_batch(bundle, model, prompts, config, past_key_values=None):
 
     tokenizer = bundle["tokenizer"]
     device = bundle["device"]
-    inputs = tokenizer(prompts, return_tensors="pt", padding=True)
+    # Prompts arrive chat-template rendered (they already carry BOS and
+    # the generation prompt); do not add special tokens a second time.
+    inputs = tokenizer(prompts, return_tensors="pt", padding=True,
+                       add_special_tokens=False)
     inputs = {key: value.to(device) for key, value in inputs.items()}
     prompt_len = inputs["input_ids"].shape[1]
     kwargs = build_generate_kwargs(config, tokenizer.pad_token_id)
@@ -364,12 +381,13 @@ def _batches(docs, batch_size):
         yield docs[start:start + batch_size]
 
 
-def _run_pass(bundle, docs, config):
+def _run_pass(bundle, docs, config, rendered=None):
     """One full timed pass; returns (records, elapsed, max_batch_seen).
 
     ``records`` maps doc_id -> (output_text, n_output_tokens). CUDA is
     synchronized around the whole pass (T3); per-doc latency uses the
-    enclosing batch time divided by the batch size.
+    enclosing batch time divided by the batch size. ``rendered`` maps
+    doc_id -> chat-template prompt (rendered once per run_config call).
     """
     import torch
 
@@ -379,7 +397,11 @@ def _run_pass(bundle, docs, config):
     _sync(torch, device)
     start = time.perf_counter()
     for chunk in _batches(docs, config["batch"]):
-        prompts = [doc["prompt"] for doc in chunk]
+        if rendered is None:
+            prompts = [render_prompt(bundle["tokenizer"], doc)
+                       for doc in chunk]
+        else:
+            prompts = [rendered[doc["doc_id"]] for doc in chunk]
         batch_start = time.perf_counter()
         texts, counts, seen = _generate_batch(
             bundle, bundle["model"], prompts, config)
@@ -432,14 +454,19 @@ def run_config(config, docs=None, profile_name="custom", split="tuning",
         # Weights are in memory from here on; a later failure is an
         # inference failure, not a load failure (report stays honest).
         console["model_loaded"] = True
-        prompts = [doc["prompt"] for doc in docs]
+        # V2: render every doc once through the official chat template;
+        # the identical rendered prompts are used for all profiles (R1).
+        rendered = {doc["doc_id"]: render_prompt(bundle["tokenizer"], doc)
+                    for doc in docs}
+        prompts = [rendered[doc["doc_id"]] for doc in docs]
         maybe_compile(bundle, requested, prompts)
         console["static_cache_used"] = bundle["static_cache"]
         console["recompilations"] = _count_recompilations()
         # Untimed warmup (excluded from every timed number, T3).
         for chunk in _batches(docs[:WARMUP_DOCS], requested["batch"]):
             _generate_batch(bundle, bundle["model"],
-                            [d["prompt"] for d in chunk], requested)
+                            [rendered[d["doc_id"]] for d in chunk],
+                            requested)
         if idle_power_w == "measure":
             idle_power_w = meter.measure_idle_power()
         item["idle_power_w"] = idle_power_w
@@ -450,7 +477,7 @@ def run_config(config, docs=None, profile_name="custom", split="tuning",
         try:
             for _ in range(repeats):
                 records, elapsed, pass_lat, seen = _run_pass(
-                    bundle, docs, requested)
+                    bundle, docs, requested, rendered)
                 pass_times.append(elapsed)
                 latencies.extend(pass_lat)
                 last_records = records

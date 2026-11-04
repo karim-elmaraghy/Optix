@@ -46,7 +46,8 @@ class _FakeTokenizer:
     pad_token_id = 2
     eos_token_id = 2
 
-    def __call__(self, prompts, return_tensors="pt", padding=True):
+    def __call__(self, prompts, return_tensors="pt", padding=True,
+                 **_kwargs):
         shape = (len(prompts), 3)
         return {"input_ids": _FakeTensor(shape),
                 "attention_mask": _FakeTensor(shape)}

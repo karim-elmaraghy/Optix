@@ -39,7 +39,8 @@ class _StubTokenizer:
     def __init__(self, prompt_ids):
         self._ids = prompt_ids
 
-    def __call__(self, prompts, return_tensors="pt", padding=True):
+    def __call__(self, prompts, return_tensors="pt", padding=True,
+                 **_kwargs):
         seqs = [self._ids[p] for p in prompts]
         width = max(len(s) for s in seqs)
         ids = [[PAD_ID] * (width - len(s)) + s for s in seqs]
