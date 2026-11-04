@@ -7,6 +7,7 @@ keeps GPU and benchmark dependencies out of its import path.
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 import os
 import subprocess
@@ -286,7 +287,22 @@ def load_dashboard_data(results_dir: Path = RESULTS_DIR) -> dict[str, Any]:
         dashboard_apply_events = []
         errors.append(f"Could not load dashboard apply details: {error}")
 
+    artifact_validation = {}
+    report_path = results_dir / 'validation_report.json'
+    if report_path.is_file():
+        try:
+            report = _read_json(report_path)
+            if benchmark_path.name not in report['artifact_sha256']:
+                raise ValueError('artifact validation report does not cover selected benchmark')
+            for name, expected in report['artifact_sha256'].items():
+                if Path(name).name != name or hashlib.sha256((results_dir / name).read_bytes()).hexdigest() != expected:
+                    raise ValueError('artifact validation report is stale')
+            artifact_validation = report
+        except (OSError, ValueError, KeyError) as error:
+            errors.append('Could not verify artifact validation report: ' + str(error))
+
     return {
+        'artifact_validation': artifact_validation,
         'session_status': metadata,
         "confirmation": _read_json(results_dir / 'heldout' / 'confirmation.json')
         if (results_dir / 'heldout' / 'confirmation.json').is_file() else {},
@@ -356,11 +372,20 @@ def _profile_decision(
 
 
 def _status_and_reason(
-    result: dict[str, Any], step: dict[str, Any] | None
+    result: dict[str, Any], step: dict[str, Any] | None, artifact_validation=None
 ) -> tuple[str, str]:
     benchmark_status = str(result.get("status", "")).lower()
     if benchmark_status == "failed":
         return "Failed", str(result.get("error") or result.get("reason") or "Failure reason not recorded")
+    report = (artifact_validation or {}).get('profiles', {}).get(result.get('profile_name'), {})
+    if report and report.get('config') == result.get('requested_config'):
+        reasons = report.get('reasons', [])
+        note = 'Artifact validator: ' + ', '.join(reasons) if reasons else 'Quality calibration is blocked'
+        if report.get('flagged_docs'):
+            note += '; docs: ' + ', '.join(str(d['doc_id']) for d in report['flagged_docs'])
+        if report.get('t5'):
+            note += '; T5 ' + ('PASS' if report['t5']['passed'] else 'FAIL') + f" (min F1 {report['t5']['min_f1']:.3f})"
+        return ('Rejected' if reasons else 'Measured (not validated)'), note
     decision = _decision(step or {})
     if decision in {"reject", "rejected", "fail", "failed"}:
         return "Rejected", str((step or {}).get("reason") or "Rejection reason not recorded")
@@ -575,7 +600,7 @@ def build_dashboard_view(data: dict[str, Any]) -> dict[str, Any]:
     naive = _baseline(benchmarks, NAIVE_PROFILE)
     competent = _baseline(benchmarks, DEFAULT_PROFILE)
     chosen = _find_chosen(benchmarks, steps)
-    if data['benchmark_is_sample']:
+    if data['benchmark_is_sample'] or data.get('session_status', {}).get('state') == 'blocked':
         chosen = None
 
     if data["benchmark_is_sample"]:
@@ -595,6 +620,8 @@ def build_dashboard_view(data: dict[str, Any]) -> dict[str, Any]:
     session_status = data.get('session_status') or {}
     if session_status.get('state') == 'blocked':
         banner += '\n\n**Calibration BLOCKED:** ' + session_status.get('message', 'invalid baseline outputs') + '. No accepted winner.'
+    if data.get('artifact_validation'):
+        banner += '\n\n**Artifact checks:** ' + '; '.join(data['artifact_validation'].get('remaining_checks', []))
     banner += ('\n\n**Raw speed is not approval.** Owner-reported V2 batching checks passed T5; V1 failed. '
                'V2 baseline truncation still blocks strict calibration, and held-out approval is pending. '
                'Integrated search requires per-document F1 >= 0.95. '
@@ -608,11 +635,15 @@ def build_dashboard_view(data: dict[str, Any]) -> dict[str, Any]:
     profile_rows = []
     for result in benchmarks:
         step = _profile_decision(result, decisions)
-        status, reason = _status_and_reason(result, step)
+        status, reason = _status_and_reason(result, step, data.get('artifact_validation'))
         quality_source = dict(result)
         if step:
             quality_source["_agent_validation"] = step.get("validation")
         quality_f1, rouge_l = _quality_values(quality_source)
+        artifact_profile = data.get('artifact_validation', {}).get('profiles', {}).get(result.get('profile_name'), {})
+        if artifact_profile.get('config') == result.get('requested_config'):
+            quality_f1 = artifact_profile.get('mean_token_f1_vs_default')
+            rouge_l = artifact_profile.get('mean_gold_rouge_l')
         speedup = _speedup(
             result.get("docs_per_sec") if str(result.get("status", "")).lower() == "success" else None,
             competent.get("docs_per_sec")
@@ -764,7 +795,7 @@ def build_dashboard_view(data: dict[str, Any]) -> dict[str, Any]:
     rejection_rows = []
     for result in benchmarks:
         step = _profile_decision(result, decisions)
-        status, reason = _status_and_reason(result, step)
+        status, reason = _status_and_reason(result, step, data.get('artifact_validation'))
         if status in {"Rejected", "Failed"}:
             rejection_rows.append([result.get("profile_name", "Profile not recorded"), status, reason])
     if not rejection_rows:

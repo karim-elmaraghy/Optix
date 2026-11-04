@@ -5,11 +5,13 @@ This branch combines PR #4 (9068273), PR #5 (4eee925), and PR #6
 lives in `optiloop/application.py`, `optiloop/integration.py`, and `app.py`.
 No benchmark JSON keys or rejection-log schemas were changed.
 
-## V2 Gate 1 update (owner-reported; original artifacts pending)
+## V2 Gate 1 update (original artifacts received and checked)
 
 Muse V2 `6ac0558` is now integrated here, retaining its commit history.
-Prompt version is `v2-chat-template`. Karim reports these real T4 results;
-Codex has not rerun them or verified the original JSON yet:
+Prompt version is `v2-chat-template`. The original six JSON files from
+Karim's Colab archive are now included byte-for-byte under `results/`.
+Codex verified these saved measurements offline, without a new GPU run.
+See [V2_VALIDATION.md](V2_VALIDATION.md) for exact failures and provenance:
 
 | Profile | docs/s | J/doc | Reported cap flags |
 |---|---:|---:|---:|
@@ -23,14 +25,14 @@ Both V2 batch checks reportedly passed T5 (minimum F1=1.000). B8's raw
 speedup is 5.63x and energy reduction approximately 81.8%, **measured but
 not quality-approved**. This supersedes the V1 T5 failure only for V2;
 do not combine their baselines or calibration. The dashboard computes raw
-speedup from original JSON once supplied; no narrative values were inserted
+speedup from the supplied original JSON; no narrative values were inserted
 into benchmark JSON or hardcoded dashboard measurement fields.
 
 Strict calibration remains BLOCKED: default B1 has five cap-reaching outputs.
 No document is silently excluded and no threshold is weakened. Cap64 remains
 rejected. Held-out confirmation has not passed; no approved winner or Apply
 demonstration exists. Calibration requires valid default AND naive outputs;
-the FP32 truncation status also needs examination when JSON arrives.
+FP32 is also blocked: the original artifacts flag four of its twenty outputs.
 
 Muse was asked on the board to inspect the five baseline outputs and actual
 generation-stop evidence, including possible EOS at the last allowed token.
@@ -41,13 +43,13 @@ all such flags remain rejections. No prompt/cap/methodology change is made here.
 ## Final readiness and V2 handoff
 
 Readiness check: the integrated Gradio application was actually launched on
-localhost and returned HTTP 200, then was closed. Real artifact loading is
-**not verified**: only sample JSON is available in the integration workspace;
-no Colab benchmark/output/rejection artifacts were found on the pushed Muse
-branch. Narrative counts above are not substitutes for those files.
+localhost and returned HTTP 200, then was closed. Real artifact loading and
+derived rejection reasons are now verified against the six original Colab
+JSON files. Their statuses remain measured/rejected, never approved winners.
 MODEL_API_KEY was absent, so the live API smoke is **untested**, not passed.
 
-For the blocked-calibration demo, first copy the ORIGINAL downloaded
+For the blocked-calibration demo, the ORIGINAL downloaded files are already
+included in this integration branch. For a new run, copy only ORIGINAL
 `benchmark_*.json`, `outputs_*.json` and any actual `agent_log.json` into the
 checkout's `results/` directory. Keep V1/V2 evidence in separate directories;
 do not overwrite it with synthetic samples. Run `python app.py`, refresh,
