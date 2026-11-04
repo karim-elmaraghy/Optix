@@ -4,6 +4,22 @@ apply(config) must load/activate that exact config or raise. evaluate(config)
 must run heldout documents and return {benchmark: result, outputs: bundle}.
 The default is restored on every rejected or exceptional attempt. A rollback
 failure raises, never claiming recovery. Persisted config uses atomic replace.
+
+Minimal persistent-runtime integration contract (GPU path not executed here):
+Keep ONE runtime holder {bundle, config}, owned by the serving integration.
+apply(config) must stop serving, release the previous bundle (important on T4),
+load_model(config), run maybe_compile for compile=True, warm up and read back
+the actual config. Publish the holder only after exact config checks pass.
+On activation failure clear the holder and raise; safe_apply then invokes
+apply(default_config), which reloads the default. If that fails, keep serving
+disabled and propagate rollback failed. Do not leave a stale bundle published.
+The evaluate callback MUST generate heldout outputs from this SAME holder,
+returning {benchmark, outputs} with actual runtime readback. PR #5 run_config
+loads/unloads a separate model: it is suitable for search, not for validating
+the active serving holder. Single-thread the entire safe_apply transaction;
+resume serving only after promotion or successful default restoration.
+This requires integration-owned lifecycle/generation callbacks; persisting a
+JSON config alone is not proof of GPU activation or hardware rollback.
 """
 import json
 import os

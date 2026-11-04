@@ -211,7 +211,7 @@ class BlockGPU:
         if fullname.split('.')[0] in {'torch','transformers','datasets','pynvml','openai','gradio'}:
             raise AssertionError('optional dependency imported: ' + fullname)
 sys.meta_path.insert(0, BlockGPU())
-import optiloop.validator, optiloop.agent, optiloop.safe_apply
+import optiloop.validator, optiloop.agent, optiloop.safe_apply, optiloop.integration
 '''
         completed = subprocess.run([sys.executable, '-c', script], cwd=Path(__file__).resolve().parents[1],
                                    capture_output=True, text=True)
