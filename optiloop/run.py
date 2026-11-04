@@ -114,37 +114,45 @@ def print_table(items, consoles=None):
         print("model load: FAILED for every profile (see errors above)")
 
 
-def check_batching(outputs_by_name, batch_profile="fp16_sdpa_b4"):
-    """T5: batch-4 outputs must match batch-1 per doc (F1 >= 0.95).
+def check_batching(outputs_by_name,
+                   batch_profiles=("fp16_sdpa_b4", "fp16_sdpa_b8")):
+    """T5: batched outputs must match batch-1 per doc (F1 >= 0.95).
 
-    Returns True when the check passes or cannot run (missing outputs are
-    already FAILED rows). A mismatch is a batching bug, not a quality
-    rejection: callers fail loudly.
+    Checks every available batched profile (batch 4 and batch 8) against
+    the batch-1 competent default. Returns True when the check passes or
+    cannot run (missing outputs are already FAILED rows). A mismatch is
+    a batching bug, not a quality rejection: callers fail loudly.
     """
-    if batch_profile not in outputs_by_name \
-            or DEFAULT_PROFILE not in outputs_by_name:
+    if DEFAULT_PROFILE not in outputs_by_name:
         return True
-    batched = {d["doc_id"]: d["output_text"]
-               for d in outputs_by_name[batch_profile]["docs"]}
     single = {d["doc_id"]: d["output_text"]
               for d in outputs_by_name[DEFAULT_PROFILE]["docs"]}
-    if not batched or not single:
+    if not single:
         return True
-    scores = {doc_id: token_f1(batched[doc_id], single[doc_id])
-              for doc_id in single if doc_id in batched}
-    worst_id = min(scores, key=scores.get)
-    mean_f1 = sum(scores.values()) / len(scores)
-    print("T5 batching: %s vs %s mean F1=%.4f min F1=%.4f (worst %s)"
-          % (batch_profile, DEFAULT_PROFILE, mean_f1, scores[worst_id],
-             worst_id))
-    if scores[worst_id] < BATCH_F1_THRESHOLD:
-        print("T5 FAIL: batch-4 output for %s has F1 %.4f < %.2f vs "
-              "batch-1. This is a batching bug (padding/masking), not a "
-              "quality rejection." % (worst_id, scores[worst_id],
-                                      BATCH_F1_THRESHOLD),
-              file=sys.stderr)
-        return False
-    return True
+    ok = True
+    for batch_profile in batch_profiles:
+        if batch_profile not in outputs_by_name:
+            continue
+        batched = {d["doc_id"]: d["output_text"]
+                   for d in outputs_by_name[batch_profile]["docs"]}
+        if not batched:
+            continue
+        scores = {doc_id: token_f1(batched[doc_id], single[doc_id])
+                  for doc_id in single if doc_id in batched}
+        worst_id = min(scores, key=scores.get)
+        mean_f1 = sum(scores.values()) / len(scores)
+        print("T5 batching: %s vs %s mean F1=%.4f min F1=%.4f (worst %s)"
+              % (batch_profile, DEFAULT_PROFILE, mean_f1,
+                 scores[worst_id], worst_id))
+        if scores[worst_id] < BATCH_F1_THRESHOLD:
+            print("T5 FAIL: %s output for %s has F1 %.4f < %.2f vs "
+                  "batch-1. This is a batching bug (padding/masking), "
+                  "not a quality rejection." % (batch_profile, worst_id,
+                                                 scores[worst_id],
+                                                 BATCH_F1_THRESHOLD),
+                  file=sys.stderr)
+            ok = False
+    return ok
 
 
 def run_gate1(args, with_compile=False, demo=False):
