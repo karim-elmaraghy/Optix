@@ -20,6 +20,14 @@ SAMPLE_DIR = RESULTS_DIR / "sample"
 
 NAIVE_PROFILE = "naive_fp32_eager_b1"
 DEFAULT_PROFILE = "default_fp16_sdpa_b1"
+KNOWN_PROFILES = (
+    NAIVE_PROFILE,
+    DEFAULT_PROFILE,
+    "fp16_sdpa_b4",
+    "fp16_sdpa_b8",
+    "fp16_sdpa_b4_compile",
+    "fp16_sdpa_b1_cap64",
+)
 TITLE = "OptiLoop - Find the fastest correct profile for YOUR GPU"
 CSS = """
 .gradio-container { max-width: 1440px !important; }
@@ -221,8 +229,12 @@ def _status_and_reason(
         return "Accepted", str((step or {}).get("reason") or "Accepted; no additional reason recorded")
     if decision in {"reject", "rejected", "fail", "failed"}:
         return "Rejected", str((step or {}).get("reason") or "Rejection reason not recorded")
+    if str(result.get("status", "")).lower() == "success":
+        return "Measured (not validated)", "Benchmark succeeded; no quality decision recorded"
     reason = result.get("error") or result.get("reason")
-    return "Decision not recorded", str(reason or "No acceptance decision or reason recorded")
+    if result.get("status") is None:
+        return "Status not recorded", str(reason or "No benchmark status recorded")
+    return str(result.get("status")), str(reason or "No acceptance decision or reason recorded")
 
 
 def _find_chosen(
@@ -464,13 +476,37 @@ def build_dashboard_view(data: dict[str, Any]) -> dict[str, Any]:
             [NAIVE_PROFILE, "Not run", "Not recorded", "Not recorded", "Not recorded", "Not recorded", "Not recorded", "Not recorded", "No benchmark result exists"],
             [DEFAULT_PROFILE, "Not run", "Not recorded", "Not recorded", "Not recorded", "Not recorded", "Not recorded", "Not recorded", "No benchmark result exists"],
         ]
+    recorded_names = {str(result.get("profile_name")) for result in benchmarks}
+    for profile_name in KNOWN_PROFILES:
+        if profile_name not in recorded_names:
+            profile_rows.append(
+                [
+                    profile_name,
+                    "Not run",
+                    "Not recorded",
+                    "Not recorded",
+                    "Not recorded",
+                    "Not recorded",
+                    "Not recorded",
+                    "Not recorded",
+                    "No benchmark result exists for this profile",
+                ]
+            )
 
     baseline_rows = []
     for label, profile in (("Naive baseline (fp32/eager/batch 1)", naive), ("Competent default (fp16/SDPA/batch 1)", competent)):
         baseline_rows.append(
             [
                 label,
-                _display_value(profile.get("status")) if profile else "Not run",
+                (
+                    "Failed"
+                    if str(profile.get("status", "")).lower() == "failed"
+                    else "Measured"
+                    if str(profile.get("status", "")).lower() == "success"
+                    else "Status not recorded"
+                )
+                if profile
+                else "Not run",
                 _format_metric(profile.get("docs_per_sec")) if profile else "Not recorded",
                 _format_metric(profile.get("latency_p50_sec"), " s") if profile else "Not recorded",
                 _format_metric(profile.get("latency_p95_sec"), " s") if profile else "Not recorded",
@@ -601,130 +637,14 @@ def refresh_dashboard() -> tuple[Any, ...]:
     )
 
 
-def _output_bundle(path: Path, split: str) -> dict[str, Any]:
-    data = _read_json(path)
-    if not isinstance(data, dict) or not isinstance(data.get("docs"), list):
-        raise ValueError(f"{path} must contain an output bundle with docs")
-    config = data.get("config")
-    if not isinstance(config, dict):
-        raise ValueError(f"{path} does not contain a config")
-    docs = [
-        doc for doc in data["docs"]
-        if isinstance(doc, dict) and doc.get("split") == split
-    ]
-    if not docs:
-        raise ValueError(f"{path} has no {split} output documents")
-    return {"config": config, "docs": docs}
-
-
-def _append_jsonl(path: Path, record: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as file:
-        file.write(json.dumps(record, sort_keys=True) + "\n")
-
-
 def safe_apply(snapshot: dict[str, Any] | None) -> str:
-    """Run Agent B's held-out validation and rollback path with Agent A's runner."""
+    """Fail closed until the app provides a real active-model apply callback."""
     if not snapshot or not snapshot.get("has_real_benchmarks"):
         return "Not applied: real benchmark results are not available."
-    chosen = snapshot.get("chosen")
-    if not isinstance(chosen, dict):
-        return "Not applied: no accepted, measured configuration is recorded."
-    config = chosen.get("actual_config") or chosen.get("requested_config")
-    if not isinstance(config, dict):
-        return "Not applied: the chosen configuration is not recorded."
-    profile_name = chosen.get("profile_name")
-    if not profile_name:
-        return "Not applied: the chosen profile name is not recorded."
-
-    results_dir = Path(snapshot.get("results_dir", RESULTS_DIR))
-    try:
-        default_tuning = _output_bundle(results_dir / f"outputs_{DEFAULT_PROFILE}.json", "tuning")
-        naive_tuning = _output_bundle(results_dir / f"outputs_{NAIVE_PROFILE}.json", "tuning")
-        default_heldout = _output_bundle(results_dir / f"outputs_{DEFAULT_PROFILE}.json", "heldout")
-    except (OSError, json.JSONDecodeError, ValueError) as error:
-        return f"Not applied: required tuning calibration and competent-default held-out artifacts are unavailable: {error}"
-
-    try:
-        from optiloop.benchmark import run_config
-        from optiloop.profiles import DEFAULT_PROFILE as DEFAULT_PROFILE_NAME
-        from optiloop.profiles import PROFILES, validate_config
-        from optiloop.safe_apply import safe_apply as run_safe_apply
-        from optiloop.validator import calibrate
-        from optiloop.workload import load_workload
-    except ImportError as error:
-        return f"Not applied: benchmark or Agent B integration is unavailable: {error}"
-
-    if DEFAULT_PROFILE_NAME != DEFAULT_PROFILE or DEFAULT_PROFILE not in PROFILES:
-        return "Not applied: shared competent-default profile does not match the dashboard contract."
-    try:
-        validate_config(config)
-        default_config = dict(PROFILES[DEFAULT_PROFILE])
-        calibration = calibrate(default_tuning, naive_tuning)
-    except (KeyError, TypeError, ValueError) as error:
-        return f"Not applied: invalid profile or tuning calibration artifacts: {error}"
-
-    active_config: dict[str, Any] = {}
-    heldout_result: dict[str, Any] = {}
-
-    def apply_config(next_config: dict[str, Any]) -> None:
-        validate_config(next_config)
-        active_config.clear()
-        active_config.update(next_config)
-
-    def evaluate_heldout(next_config: dict[str, Any]) -> dict[str, Any]:
-        _tuning_docs, heldout_docs = load_workload()
-        result = run_config(
-            next_config,
-            heldout_docs,
-            profile_name=profile_name,
-            split="heldout",
-            repeats=3,
-            results_dir=str(results_dir),
-        )
-        heldout_result.update(result)
-        return {"benchmark": result["benchmark"], "outputs": result["outputs"]}
-
-    try:
-        event = run_safe_apply(
-            config,
-            default_config,
-            default_heldout,
-            calibration,
-            apply_config,
-            evaluate_heldout,
-            state_path=str(results_dir / "active_config.json"),
-            log_path=str(results_dir / "apply_log.jsonl"),
-        )
-    except RuntimeError as error:
-        return f"Safe apply could not confirm rollback: {error}"
-
-    record = {
-        "candidate_config": config,
-        "apply_result": event,
-        "benchmark": heldout_result.get("benchmark"),
-    }
-    try:
-        _append_jsonl(results_dir / "dashboard_apply_log.jsonl", record)
-    except OSError as error:
-        return f"Safe apply returned {event.get('action')}; dashboard confirmation could not be saved: {error}"
-
-    validation = event.get("validation", {})
-    measured = heldout_result.get("benchmark", {})
-    quality_rows = validation.get("docs", []) if isinstance(validation, dict) else []
-    f1, rouge = _quality_values({"_agent_validation": {"docs": quality_rows}})
-    return json.dumps(
-        {
-            "action": event.get("action"),
-            "active_config": event.get("active_config"),
-            "heldout_accepted": validation.get("accepted"),
-            "heldout_reasons": validation.get("reasons"),
-            "mean_heldout_token_f1": f1,
-            "mean_heldout_rouge_l": rouge,
-            "heldout_docs_per_sec": measured.get("docs_per_sec"),
-            "heldout_joules_per_doc": measured.get("joules_per_doc"),
-        },
-        sort_keys=True,
+    return (
+        "Not applied: the dashboard has no active inference runtime to update. "
+        "Agent B's safe_apply requires a real apply(config) callback; no profile "
+        "was activated or rolled back."
     )
 
 
@@ -808,8 +728,8 @@ def create_app() -> Any:
             refresh = gr.Button("Refresh results", variant="secondary")
             apply_button = gr.Button("Safely apply chosen profile", variant="primary")
         gr.Markdown(
-            "Safe apply re-runs held-out validation through Agent B and rolls back on rejection. "
-            "The dashboard has no separate model-serving endpoint."
+            "Safe apply is currently blocked: no active inference runtime is wired. "
+            "The dashboard will not claim a profile was applied or rolled back."
         )
         apply_result = gr.Textbox(
             label="Safe apply and rollback",
