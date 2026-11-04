@@ -17,7 +17,21 @@ import json
 import math
 
 from .agent import check_config, execution_reasons
-from .validator import index_docs, validate
+from .validator import index_docs, token_f1, validate
+
+
+def batching_reasons(candidate, reference):
+    """T5 is independent of calibrated quality; never relax its 0.95 floor."""
+    try:
+        split = candidate['docs'][0]['split']
+        a, b = index_docs(candidate, split), index_docs(reference, split)
+        if a.keys() != b.keys():
+            return ['T5_document_mismatch']
+        if any(token_f1(a[k]['output_text'], b[k]['output_text']) < 0.95 for k in a):
+            return ['T5_batching_failed']
+        return []
+    except (KeyError, TypeError, ValueError, IndexError):
+        return ['T5_missing_outputs']
 
 
 def make_evaluator(docs, default, calibration, *, runner=None, results_dir='results', repeats=3):
@@ -60,6 +74,19 @@ def make_evaluator(docs, default, calibration, *, runner=None, results_dir='resu
             decision = dict(accepted=False, split='tuning', docs=[], reasons=sorted(set(reasons)))
         else:
             decision = validate(bundle, default, calibration, split='tuning')
+            if requested['batch'] > 1:
+                reference_config = dict(requested, batch=1)
+                reference = run(reference_config, copy.deepcopy(docs), profile_name=slug + '_batch1',
+                                split='tuning', repeats=repeats, results_dir=results_dir)
+                t5 = execution_reasons(reference['benchmark'], reference_config)
+                if t5:
+                    t5 = ['T5_reference_failed']
+                elif reference['outputs'].get('config') != reference_config:
+                    t5 = ['T5_reference_config_mismatch']
+                else:
+                    t5 = batching_reasons(bundle, reference['outputs'])
+                decision['reasons'] = sorted(set(decision['reasons'] + t5))
+                decision['accepted'] = decision['accepted'] and not t5
         return dict(benchmark=benchmark, validation=decision)
     return evaluate
 

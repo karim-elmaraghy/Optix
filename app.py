@@ -10,12 +10,14 @@ import json
 import math
 import os
 import subprocess
+import threading
 from pathlib import Path
 from typing import Any
 
 
 ROOT = Path(__file__).resolve().parent
 RESULTS_DIR = ROOT / "results"
+RUN_LOCK = threading.Lock()
 SAMPLE_DIR = RESULTS_DIR / "sample"
 
 NAIVE_PROFILE = "naive_fp32_eager_b1"
@@ -237,6 +239,12 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
 def load_dashboard_data(results_dir: Path = RESULTS_DIR) -> dict[str, Any]:
     """Load real results when present, otherwise the explicitly marked samples."""
     results_dir = Path(results_dir)
+    pointer = results_dir / 'current_session.json'
+    if pointer.is_file():
+        directory = _read_json(pointer).get('directory', '')
+        candidate = (results_dir / directory).resolve()
+        if candidate.parent == results_dir.resolve() and candidate.is_dir():
+            results_dir = candidate
     sample_dir = results_dir / "sample"
     errors: list[str] = []
     benchmark_files = sorted(
@@ -244,6 +252,9 @@ def load_dashboard_data(results_dir: Path = RESULTS_DIR) -> dict[str, Any]:
         key=lambda path: path.stat().st_mtime_ns,
     )
     benchmark_is_sample = not benchmark_files
+    metadata = _read_json(results_dir / 'session.json') if (results_dir / 'session.json').is_file() else {}
+    if metadata.get('kind') == 'synthetic':
+        benchmark_is_sample = True
     benchmark_path = benchmark_files[-1] if benchmark_files else sample_dir / "benchmark_sample.json"
 
     try:
@@ -276,6 +287,8 @@ def load_dashboard_data(results_dir: Path = RESULTS_DIR) -> dict[str, Any]:
         errors.append(f"Could not load dashboard apply details: {error}")
 
     return {
+        "confirmation": _read_json(results_dir / 'heldout' / 'confirmation.json')
+        if (results_dir / 'heldout' / 'confirmation.json').is_file() else {},
         "benchmarks": benchmarks,
         "agent_steps": agent_steps,
         "apply_events": apply_events,
@@ -368,6 +381,11 @@ def _find_chosen(
     candidates = []
     for step in steps:
         decision = _decision(step)
+        if decision in {'reject', 'rejected', 'failed', 'fail'} or step.get('accepted') is False:
+            continue
+        validation = step.get('validation', {})
+        if validation.get('accepted') is not True or validation.get('reasons'):
+            continue
         if step.get("chosen") is not True and step.get("selected") is not True and decision not in {
             "promote",
             "accepted",
@@ -390,9 +408,11 @@ def _find_chosen(
             ),
             None,
         )
-        selected = dict(matched or result)
+        selected = dict(result or matched or {})
         if selected:
             if str(selected.get("status", "")).lower() != "success":
+                continue
+            if selected.get('actual_config') != selected.get('requested_config'):
                 continue
             selected.setdefault("profile_name", step.get("profile_name"))
             selected.setdefault("requested_config", config)
@@ -409,16 +429,6 @@ def _find_chosen(
     if measured:
         return max(measured, key=lambda item: item[1])[2]
 
-    for result in reversed(benchmarks):
-        if (
-            str(result.get("status", "")).lower() == "success"
-            and (
-                result.get("chosen") is True
-                or result.get("selected") is True
-                or result.get("winner") is True
-            )
-        ):
-            return result
     return None
 
 
@@ -564,6 +574,8 @@ def build_dashboard_view(data: dict[str, Any]) -> dict[str, Any]:
     naive = _baseline(benchmarks, NAIVE_PROFILE)
     competent = _baseline(benchmarks, DEFAULT_PROFILE)
     chosen = _find_chosen(benchmarks, steps)
+    if data['benchmark_is_sample']:
+        chosen = None
 
     if data["benchmark_is_sample"]:
         banner = (
@@ -579,6 +591,9 @@ def build_dashboard_view(data: dict[str, Any]) -> dict[str, Any]:
             banner += " Agent log: not run or unavailable."
     if data["errors"]:
         banner += "\n\n**Data loading errors:** " + " | ".join(data["errors"])
+    banner += ('\n\n**Raw speed is not approval.** Reported T4 batch-4 and batch-8 runs failed T5; '
+               'their raw speedups are not quality-approved. Integrated search requires per-document F1 >= 0.95. '
+               'GPU activation/rollback remains unverified.')
 
     runtime_gpu, _ = _gpu_info()
     benchmark_gpu, model = _result_metadata(benchmarks)
@@ -719,6 +734,14 @@ def build_dashboard_view(data: dict[str, Any]) -> dict[str, Any]:
     else:
         gate = "GATE 1 NOT RUN - winner and competent-default measurements are required"
     winner_lines.append(f"**{gate}**")
+    confirmation = data.get('confirmation') or {}
+    if confirmation:
+        winner_lines.append('**Integrated held-out confirmation:** ' +
+                            ('accepted' if confirmation.get('validation', {}).get('accepted') is True else 'rejected'))
+        winner_lines.append('**Activation:** not attempted; persistent GPU runtime is not connected.')
+        winner_lines.append('**T8 speed confirmation:** ' +
+                            ('within 10%' if confirmation.get('speedup_confirmed') else 'not confirmed; use held-out speedup only'))
+        winner_lines.append('**Held-out speedup vs default:** ' + _format_metric(confirmation.get('heldout_speedup_vs_default'), 'x'))
 
     rejection_rows = []
     for result in benchmarks:
@@ -816,6 +839,35 @@ def safe_apply(snapshot: dict[str, Any] | None) -> str:
     )
 
 
+def optimize_action():
+    from optiloop.application import run_optimization
+    if not RUN_LOCK.acquire(blocking=False):
+        return 'Another GPU operation is running.'
+    try:
+        session = run_optimization(RESULTS_DIR)
+        return 'Optimization completed. Results: ' + str(session) + '. Refresh results; fallback sources remain labeled.'
+    except Exception as exc:
+        return 'Optimization stopped: ' + type(exc).__name__ + '. Check saved failure/rejection JSON. MODEL_API_KEY must be set; no key is displayed.'
+    finally:
+        RUN_LOCK.release()
+
+
+def confirm_action(snapshot):
+    from optiloop.application import confirm_heldout
+    if not snapshot or not snapshot.get('has_real_benchmarks'):
+        return 'No measured session to confirm.'
+    if not RUN_LOCK.acquire(blocking=False):
+        return 'Another GPU operation is running.'
+    try:
+        result = confirm_heldout(snapshot['results_dir'])
+        return ('Held-out confirmation: ' + ('accepted' if result['validation']['accepted'] else 'rejected')
+                + '. No runtime activation or GPU rollback was attempted.')
+    except Exception as exc:
+        return 'Held-out confirmation stopped: ' + type(exc).__name__
+    finally:
+        RUN_LOCK.release()
+
+
 def create_app() -> Any:
     import gradio as gr
 
@@ -883,15 +935,15 @@ def create_app() -> Any:
             with gr.Column(scale=2, elem_classes=["surface", "optix-card"]):
                 gr.Markdown("### Request an optimization")
                 gr.Markdown(
-                    "Meta-powered execution is not connected in this dashboard build. "
-                    "No API request will be sent; the button remains unavailable until the optimizer runner is integrated.",
+                    "Runs real Meta API proposals and GPU benchmarks (up to eight experiments plus baselines and batch-1 checks). Set MODEL_API_KEY and HF_TOKEN in the server environment. Failed quality or T5 checks cannot win. No profile is automatically activated.",
                     elem_classes=["workflow-note"],
                 )
                 optimize_button = gr.Button(
                     "Request Meta optimization",
                     variant="primary",
-                    interactive=False,
+                    interactive=True,
                 )
+                optimize_result = gr.Textbox(label='Optimization status', interactive=False)
                 gr.Markdown(
                     "Saved proposals appear alongside their source and recorded decision.",
                     elem_classes=["quiet"],
@@ -919,6 +971,8 @@ def create_app() -> Any:
             with gr.Column(scale=3, elem_classes=["surface", "optix-card"]):
                 gr.Markdown("### Held-out confirmation")
                 winner = gr.Markdown()
+                confirm_button = gr.Button('Confirm winner on held-out documents')
+                confirm_result = gr.Textbox(label='Held-out status', interactive=False)
             with gr.Column(scale=2, elem_classes=["surface", "optix-card"]):
                 gr.Markdown("### Apply state")
                 apply_summary = gr.Markdown()
@@ -948,6 +1002,8 @@ def create_app() -> Any:
         ]
         demo.load(refresh_dashboard, outputs=outputs)
         refresh.click(refresh_dashboard, outputs=outputs)
+        optimize_button.click(optimize_action, outputs=optimize_result).then(refresh_dashboard, outputs=outputs)
+        confirm_button.click(confirm_action, inputs=snapshot_state, outputs=confirm_result).then(refresh_dashboard, outputs=outputs)
         apply_button.click(safe_apply, inputs=snapshot_state, outputs=apply_result)
     return demo
 
@@ -957,7 +1013,7 @@ if __name__ == "__main__":
 
     app = create_app()
     app.launch(
-        share=False,
+        share=os.environ.get('GRADIO_SHARE', '0') == '1',
         server_name=os.environ.get("GRADIO_SERVER_NAME", "127.0.0.1"),
         theme=gr.themes.Soft(primary_hue="cyan", secondary_hue="slate", neutral_hue="slate"),
         css=CSS,

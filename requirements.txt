@@ -2,6 +2,6 @@ torch
 transformers
 datasets
 nvidia-ml-py
-gradio
+gradio==6.31.0
 pytest
 openai

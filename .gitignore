@@ -1,3 +1,5 @@
 .board/
 management/.optix/
 .worktrees/
+__pycache__/
+*.py[cod]
