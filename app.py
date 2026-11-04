@@ -30,8 +30,114 @@ KNOWN_PROFILES = (
 )
 TITLE = "OptiLoop - Find the fastest correct profile for YOUR GPU"
 CSS = """
-.gradio-container { max-width: 1440px !important; }
-.optix-card { border: 1px solid #29334a; border-radius: 14px; padding: 1rem; }
+:root {
+  --canvas: #F7F6F2;
+  --surface: #FFFFFF;
+  --ink: #292824;
+  --muted: #77756F;
+  --line: #E5E2DA;
+  --accent: #B66C4B;
+  --accent-wash: #F5ECE7;
+}
+body, .gradio-container {
+  background: var(--canvas) !important;
+  color: var(--ink) !important;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+}
+.gradio-container {
+  max-width: 1120px !important;
+  padding: 34px 32px 64px !important;
+}
+footer { display: none !important; }
+h1, h2, h3, p { color: var(--ink) !important; }
+h1 {
+  font-family: Georgia, "Times New Roman", serif !important;
+  font-size: 2.45rem !important;
+  font-weight: 400 !important;
+  letter-spacing: -0.035em !important;
+  line-height: 1.12 !important;
+}
+h2 {
+  font-family: Georgia, "Times New Roman", serif !important;
+  font-size: 1.55rem !important;
+  font-weight: 400 !important;
+  letter-spacing: -0.02em !important;
+}
+h3 { font-size: 1rem !important; font-weight: 600 !important; }
+.hero { padding: 18px 0 26px; border-bottom: 1px solid var(--line); }
+.eyebrow, .section-label {
+  color: var(--accent) !important;
+  font-size: 0.72rem !important;
+  font-weight: 650 !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase;
+}
+.subtitle { color: var(--muted) !important; font-size: 1rem; max-width: 660px; }
+.section-heading { padding-top: 20px; margin-bottom: 8px; }
+.surface, .optix-card, .gr-group {
+  background: var(--surface) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 5px !important;
+  box-shadow: none !important;
+}
+.optix-card { padding: 18px 20px !important; }
+.notice {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  background: #FBFAF7;
+  color: var(--ink);
+  padding: 13px 16px;
+  margin: 18px 0 8px;
+  font-size: 0.92rem;
+}
+.quiet { color: var(--muted) !important; font-size: 0.88rem !important; }
+.workflow-note { color: var(--muted); font-size: 0.88rem; line-height: 1.6; }
+.gradio-container button.primary {
+  background: var(--accent) !important;
+  border: 1px solid var(--accent) !important;
+  border-radius: 4px !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  font-weight: 550 !important;
+}
+.gradio-container button.secondary {
+  background: #fff !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 4px !important;
+  color: var(--ink) !important;
+  box-shadow: none !important;
+}
+.gradio-container button:disabled {
+  opacity: 0.62 !important;
+  cursor: not-allowed !important;
+}
+.gradio-container input, .gradio-container textarea {
+  border-color: var(--line) !important;
+  border-radius: 4px !important;
+  background: #fff !important;
+  color: var(--ink) !important;
+}
+.gradio-container .table-wrap {
+  border: 1px solid var(--line) !important;
+  border-radius: 4px !important;
+  background: #fff !important;
+}
+.gradio-container table thead th {
+  background: #F8F7F4 !important;
+  color: var(--muted) !important;
+  font-size: 0.73rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.gradio-container table td, .gradio-container table th {
+  border-color: var(--line) !important;
+  color: var(--ink) !important;
+}
+@media (max-width: 720px) {
+  .gradio-container { padding: 20px 14px 40px !important; }
+  h1 { font-size: 2rem !important; }
+}
 """
 
 
@@ -222,14 +328,17 @@ def _profile_decision(
 def _status_and_reason(
     result: dict[str, Any], step: dict[str, Any] | None
 ) -> tuple[str, str]:
-    if str(result.get("status", "")).lower() == "failed":
+    benchmark_status = str(result.get("status", "")).lower()
+    if benchmark_status == "failed":
         return "Failed", str(result.get("error") or result.get("reason") or "Failure reason not recorded")
     decision = _decision(step or {})
-    if decision in {"promote", "accepted", "accept", "pass", "passed"}:
-        return "Accepted", str((step or {}).get("reason") or "Accepted; no additional reason recorded")
     if decision in {"reject", "rejected", "fail", "failed"}:
         return "Rejected", str((step or {}).get("reason") or "Rejection reason not recorded")
-    if str(result.get("status", "")).lower() == "success":
+    if decision in {"promote", "accepted", "accept", "pass", "passed"}:
+        if benchmark_status != "success":
+            return "Unverified", "Proposal was marked accepted, but no successful benchmark is recorded"
+        return "Accepted", str((step or {}).get("reason") or "Accepted; no additional reason recorded")
+    if benchmark_status == "success":
         return "Measured (not validated)", "Benchmark succeeded; no quality decision recorded"
     reason = result.get("error") or result.get("reason")
     if result.get("status") is None:
@@ -267,6 +376,8 @@ def _find_chosen(
         )
         selected = dict(matched or result)
         if selected:
+            if str(selected.get("status", "")).lower() != "success":
+                continue
             selected.setdefault("profile_name", step.get("profile_name"))
             selected.setdefault("requested_config", config)
             selected.setdefault("actual_config", config)
@@ -283,7 +394,14 @@ def _find_chosen(
         return max(measured, key=lambda item: item[1])[2]
 
     for result in reversed(benchmarks):
-        if result.get("chosen") is True or result.get("selected") is True or result.get("winner") is True:
+        if (
+            str(result.get("status", "")).lower() == "success"
+            and (
+                result.get("chosen") is True
+                or result.get("selected") is True
+                or result.get("winner") is True
+            )
+        ):
             return result
     return None
 
@@ -458,23 +576,28 @@ def build_dashboard_view(data: dict[str, Any]) -> dict[str, Any]:
         if step:
             quality_source["_agent_validation"] = step.get("validation")
         quality_f1, rouge_l = _quality_values(quality_source)
+        speedup = _speedup(
+            result.get("docs_per_sec") if str(result.get("status", "")).lower() == "success" else None,
+            competent.get("docs_per_sec")
+            if competent and str(competent.get("status", "")).lower() == "success"
+            else None,
+        )
         profile_rows.append(
             [
                 _display_value(result.get("profile_name")),
-                status,
                 _format_metric(result.get("docs_per_sec")),
-                _format_metric(result.get("latency_p50_sec"), " s"),
-                _format_metric(result.get("latency_p95_sec"), " s"),
                 _format_metric(result.get("joules_per_doc")),
+                f"{speedup:.2f}x" if speedup is not None else "Not recorded",
                 _format_metric(quality_f1),
                 _format_metric(rouge_l),
+                status,
                 reason,
             ]
         )
     if not profile_rows:
         profile_rows = [
-            [NAIVE_PROFILE, "Not run", "Not recorded", "Not recorded", "Not recorded", "Not recorded", "Not recorded", "Not recorded", "No benchmark result exists"],
-            [DEFAULT_PROFILE, "Not run", "Not recorded", "Not recorded", "Not recorded", "Not recorded", "Not recorded", "Not recorded", "No benchmark result exists"],
+            [NAIVE_PROFILE, "Not recorded", "Not recorded", "Not recorded", "Not recorded", "Not recorded", "Not run", "No benchmark result exists"],
+            [DEFAULT_PROFILE, "Not recorded", "Not recorded", "Not recorded", "Not recorded", "Not recorded", "Not run", "No benchmark result exists"],
         ]
     recorded_names = {str(result.get("profile_name")) for result in benchmarks}
     for profile_name in KNOWN_PROFILES:
@@ -482,13 +605,12 @@ def build_dashboard_view(data: dict[str, Any]) -> dict[str, Any]:
             profile_rows.append(
                 [
                     profile_name,
+                    "Not recorded",
+                    "Not recorded",
+                    "Not recorded",
+                    "Not recorded",
+                    "Not recorded",
                     "Not run",
-                    "Not recorded",
-                    "Not recorded",
-                    "Not recorded",
-                    "Not recorded",
-                    "Not recorded",
-                    "Not recorded",
                     "No benchmark result exists for this profile",
                 ]
             )
@@ -554,8 +676,15 @@ def build_dashboard_view(data: dict[str, Any]) -> dict[str, Any]:
     winner_docs = chosen.get("docs_per_sec") if chosen else None
     winner_energy = chosen.get("joules_per_doc") if chosen else None
     for label, baseline in (("vs naive baseline", naive), ("vs competent default", competent)):
-        speedup = _speedup(winner_docs, baseline.get("docs_per_sec") if baseline else None)
-        saving = _percent_saving(winner_energy, baseline.get("joules_per_doc") if baseline else None)
+        measured_baseline = baseline if baseline and str(baseline.get("status", "")).lower() == "success" else None
+        speedup = _speedup(
+            winner_docs if chosen else None,
+            measured_baseline.get("docs_per_sec") if measured_baseline else None,
+        )
+        saving = _percent_saving(
+            winner_energy if chosen else None,
+            measured_baseline.get("joules_per_doc") if measured_baseline else None,
+        )
         comparisons.append(
             [
                 label,
@@ -563,23 +692,17 @@ def build_dashboard_view(data: dict[str, Any]) -> dict[str, Any]:
                 f"{saving:.2f}%" if saving is not None else "Not recorded",
             ]
         )
-    default_speedup = _speedup(winner_docs, competent.get("docs_per_sec") if competent else None)
+    default_speedup = _speedup(
+        winner_docs if chosen else None,
+        competent.get("docs_per_sec")
+        if competent and str(competent.get("status", "")).lower() == "success"
+        else None,
+    )
     if chosen and default_speedup is not None:
         gate = "GATE 1 PASSED" if default_speedup >= 1.2 else "GATE 1 NOT PASSED"
     else:
         gate = "GATE 1 NOT RUN - winner and competent-default measurements are required"
     winner_lines.append(f"**{gate}**")
-
-    chart_rows = []
-    plotted: set[str] = set()
-    for role, result in (("Naive", naive), ("Competent default", competent), ("Chosen", chosen)):
-        if not result:
-            continue
-        value = _number(result.get("docs_per_sec"))
-        name = str(result.get("profile_name") or role)
-        if value is not None and name not in plotted:
-            chart_rows.append({"Profile": name, "docs/s": value, "Comparison": role})
-            plotted.add(name)
 
     rejection_rows = []
     for result in benchmarks:
@@ -600,16 +723,46 @@ def build_dashboard_view(data: dict[str, Any]) -> dict[str, Any]:
         for step in steps
     ] or [["No agent steps recorded", "Source not recorded", "Not run", "No agent log entries available"]]
 
+    apply_events = data.get("apply_events", [])
+    dashboard_events = data.get("dashboard_apply_events", [])
+    last_apply = dashboard_events[-1] if dashboard_events else (
+        apply_events[-1] if apply_events else None
+    )
+    if not last_apply:
+        apply_summary = (
+            "**No apply attempt recorded.** The dashboard is not connected to an "
+            "active inference runtime, so no profile has been applied or restored."
+        )
+    else:
+        event = last_apply.get("apply_result", last_apply)
+        action = event.get("action")
+        active_config = event.get("active_config")
+        if action == "promoted":
+            apply_summary = (
+                "**Recorded status: promoted.**\n\n"
+                f"Active configuration: `{json.dumps(active_config, sort_keys=True) if active_config else 'Not recorded'}`"
+            )
+        elif action == "rolled_back":
+            apply_summary = (
+                "**Recorded status: rolled back.** The safe-apply log reports restoration "
+                f"of `{json.dumps(active_config, sort_keys=True) if active_config else 'the default configuration'}`."
+            )
+        else:
+            apply_summary = (
+                "**Apply status is unverified.** A log entry exists but does not contain "
+                "a recognized promoted or rolled-back action."
+            )
+
     return {
         "banner": banner,
         "gpu_and_model": gpu_and_model,
         "profile_rows": profile_rows,
         "baseline_rows": baseline_rows,
         "comparison_rows": comparisons,
-        "chart_rows": chart_rows,
         "winner_markdown": "\n\n".join(winner_lines),
         "rejection_rows": rejection_rows,
         "agent_rows": agent_rows,
+        "apply_summary": apply_summary,
         "snapshot": {
             **data,
             "benchmarks": benchmarks,
@@ -628,11 +781,10 @@ def refresh_dashboard() -> tuple[Any, ...]:
         view["gpu_and_model"],
         view["profile_rows"],
         view["baseline_rows"],
-        view["comparison_rows"],
-        view["chart_rows"],
         view["winner_markdown"],
         view["rejection_rows"],
         view["agent_rows"],
+        view["apply_summary"],
         view["snapshot"],
     )
 
@@ -652,90 +804,119 @@ def create_app() -> Any:
     import gradio as gr
 
     with gr.Blocks(title=TITLE) as demo:
-        gr.Markdown(f"# {TITLE}\n\nA results-first view of correctness, speed, energy, and agent decisions.")
-        banner = gr.Markdown()
+        with gr.Row(elem_classes=["hero"]):
+            with gr.Column(scale=5):
+                gr.Markdown("OPTILOOP  /  INFERENCE WORKBENCH", elem_classes=["eyebrow"])
+                gr.Markdown("# Find the fastest correct profile.")
+                gr.Markdown(
+                    "Compare measured inference profiles, review the evidence, and keep quality in view.",
+                    elem_classes=["subtitle"],
+                )
+            with gr.Column(scale=1, min_width=190):
+                refresh = gr.Button("Refresh saved results", variant="primary")
+        banner = gr.Markdown(elem_classes=["notice"])
         snapshot_state = gr.State()
+
+        gr.Markdown("01  /  OVERVIEW", elem_classes=["section-label section-heading"])
         with gr.Row():
-            gpu = gr.Markdown(elem_classes=["optix-card"])
-            gr.Markdown(
-                "### Trust the result\n"
-                "Only values present in the loaded JSON are shown as measurements. "
-                "Missing fields remain **Not recorded**.",
-                elem_classes=["optix-card"],
-            )
-        with gr.Row():
-            with gr.Column(scale=3):
-                gr.Markdown("## Tested configurations")
-                profiles = gr.Dataframe(
-                    headers=[
-                        "Profile",
-                        "Status",
-                        "docs/s",
-                        "p50 latency",
-                        "p95 latency",
-                        "J/doc",
-                        "Quality F1 vs default",
-                        "ROUGE-L vs gold",
-                        "Reason",
-                    ],
-                    datatype=["str", "str", "str", "str", "str", "str", "str", "str", "str"],
-                    interactive=False,
-                    wrap=True,
+            with gr.Column(scale=3, elem_classes=["surface", "optix-card"]):
+                gr.Markdown(
+                    "### A careful search for better inference\n\n"
+                    "OptiLoop tests configurations against a competent default, "
+                    "then checks whether a faster profile preserves output quality. "
+                    "A benchmark result is not a quality pass by itself.",
+                    elem_classes=["overview-copy"],
                 )
-            with gr.Column(scale=2):
-                gr.Markdown("## Baselines")
-                baselines = gr.Dataframe(
-                    headers=["Baseline", "Run status", "docs/s", "p50 latency", "p95 latency", "Energy"],
-                    datatype=["str", "str", "str", "str", "str", "str"],
-                    interactive=False,
-                    wrap=True,
+                gr.Markdown(
+                    "Numbers below come from saved benchmark results. Missing evidence stays unreported.",
+                    elem_classes=["quiet"],
                 )
-                gr.Markdown("## Comparison")
-                comparisons = gr.Dataframe(
-                    headers=["Comparison", "Throughput speedup", "Energy saved"],
-                    datatype=["str", "str", "str"],
-                    interactive=False,
-                )
-        gr.Markdown("## Throughput comparison")
-        chart = gr.BarPlot(
-            x="Profile",
-            y="docs/s",
-            color="Comparison",
-            color_map={"Naive": "#ef4444", "Competent default": "#94a3b8", "Chosen": "#22c55e"},
-            colors_in_legend=["Naive", "Competent default", "Chosen"],
+            with gr.Column(scale=2, elem_classes=["surface", "optix-card"]):
+                gpu = gr.Markdown()
+
+        gr.Markdown("02  /  EXPERIMENTS", elem_classes=["section-label section-heading"])
+        gr.Markdown(
+            "Compare both baselines first. Speedup is calculated only when the profile and competent default have successful measurements.",
+            elem_classes=["quiet"],
         )
-        with gr.Row():
-            with gr.Column():
-                gr.Markdown("## Chosen configuration and held-out confirmation")
-                winner = gr.Markdown()
-            with gr.Column():
-                gr.Markdown("## Rejection log")
-                rejections = gr.Dataframe(
-                    headers=["Profile", "Status", "Recorded reason"],
-                    datatype=["str", "str", "str"],
-                    interactive=False,
-                    wrap=True,
-                )
-        gr.Markdown("## Agent proposals")
-        gr.Markdown("Meta API proposals and rule-based fallback are labeled separately; fallback is not the Meta agent.")
-        agent_log = gr.Dataframe(
-            headers=["Hypothesis", "Source", "Decision", "Reason"],
-            datatype=["str", "str", "str", "str"],
+        baselines = gr.Dataframe(
+            headers=["Reference profile", "Run", "docs/s", "p50 latency", "p95 latency", "Energy / doc"],
+            datatype=["str", "str", "str", "str", "str", "str"],
             interactive=False,
             wrap=True,
+            elem_classes=["surface", "results-table"],
         )
-        with gr.Row():
-            refresh = gr.Button("Refresh results", variant="secondary")
-            apply_button = gr.Button("Safely apply chosen profile", variant="primary")
-        gr.Markdown(
-            "Safe apply is currently blocked: no active inference runtime is wired. "
-            "The dashboard will not claim a profile was applied or rolled back."
-        )
-        apply_result = gr.Textbox(
-            label="Safe apply and rollback",
-            value="No profile has been applied.",
+        profiles = gr.Dataframe(
+            headers=[
+                "Profile",
+                "docs/s",
+                "J / doc",
+                "vs competent default",
+                "Quality F1",
+                "ROUGE-L",
+                "Validation",
+                "Recorded reason",
+            ],
+            datatype=["str", "str", "str", "str", "str", "str", "str", "str"],
             interactive=False,
-            lines=3,
+            wrap=True,
+            elem_classes=["surface", "results-table"],
+        )
+        gr.Markdown("03  /  OPTIMIZE", elem_classes=["section-label section-heading"])
+        with gr.Row():
+            with gr.Column(scale=2, elem_classes=["surface", "optix-card"]):
+                gr.Markdown("### Request an optimization")
+                gr.Markdown(
+                    "Meta-powered execution is not connected in this dashboard build. "
+                    "No API request will be sent; the button remains unavailable until the optimizer runner is integrated.",
+                    elem_classes=["workflow-note"],
+                )
+                optimize_button = gr.Button(
+                    "Request Meta optimization",
+                    variant="primary",
+                    interactive=False,
+                )
+                gr.Markdown(
+                    "Saved proposals appear alongside their source and recorded decision.",
+                    elem_classes=["quiet"],
+                )
+            with gr.Column(scale=3):
+                gr.Markdown("### Proposal history")
+                agent_log = gr.Dataframe(
+                    headers=["Hypothesis", "Source", "Decision", "Reason"],
+                    datatype=["str", "str", "str", "str"],
+                    interactive=False,
+                    wrap=True,
+                    elem_classes=["surface", "results-table"],
+                )
+        gr.Markdown("### Rejected and failed candidates", elem_classes=["section-heading"])
+        rejections = gr.Dataframe(
+            headers=["Profile", "Status", "Recorded reason"],
+            datatype=["str", "str", "str"],
+            interactive=False,
+            wrap=True,
+            elem_classes=["surface", "results-table"],
+        )
+
+        gr.Markdown("04  /  APPLY & ROLLBACK", elem_classes=["section-label section-heading"])
+        with gr.Row():
+            with gr.Column(scale=3, elem_classes=["surface", "optix-card"]):
+                gr.Markdown("### Held-out confirmation")
+                winner = gr.Markdown()
+            with gr.Column(scale=2, elem_classes=["surface", "optix-card"]):
+                gr.Markdown("### Apply state")
+                apply_summary = gr.Markdown()
+                apply_button = gr.Button("Check apply readiness", variant="secondary")
+                apply_result = gr.Textbox(
+                    label="Readiness",
+                    value="No profile has been applied.",
+                    interactive=False,
+                    lines=2,
+                )
+
+        gr.Markdown(
+            "OptiLoop  ·  Evidence from saved results only  ·  GPU and optimizer execution are not implied by this interface",
+            elem_classes=["quiet"],
         )
 
         outputs = [
@@ -743,11 +924,10 @@ def create_app() -> Any:
             gpu,
             profiles,
             baselines,
-            comparisons,
-            chart,
             winner,
             rejections,
             agent_log,
+            apply_summary,
             snapshot_state,
         ]
         demo.load(refresh_dashboard, outputs=outputs)

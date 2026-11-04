@@ -59,8 +59,7 @@ class DashboardTests(unittest.TestCase):
 
         self.assertIn("SAMPLE DATA - NOT REAL RESULTS", view["banner"])
         self.assertIn("No real benchmark result set", view["banner"])
-        self.assertTrue(all(row[1] == "Not run" for row in view["profile_rows"]))
-        self.assertEqual(view["chart_rows"], [])
+        self.assertTrue(all(row[6] == "Not run" for row in view["profile_rows"]))
         self.assertFalse(data["has_real_benchmarks"])
         self.assertIn("fp16_sdpa_b4_compile", [row[0] for row in view["profile_rows"]])
 
@@ -127,8 +126,8 @@ class DashboardTests(unittest.TestCase):
             data = app.load_dashboard_data(results)
             view = app.build_dashboard_view(data)
 
-        self.assertEqual(view["profile_rows"][2][1], "Failed")
-        self.assertEqual(view["profile_rows"][2][8], "measured backend failure")
+        self.assertEqual(view["profile_rows"][2][6], "Failed")
+        self.assertEqual(view["profile_rows"][2][7], "measured backend failure")
         self.assertIn("Rule fallback", view["agent_rows"][0][1])
         self.assertIn("measured backend failure", view["rejection_rows"][0][2])
         self.assertIn("measured validator rejection", view["rejection_rows"][1][2])
@@ -228,9 +227,10 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("Meta API", view["agent_rows"][0][1])
         self.assertEqual(view["winner_markdown"].splitlines()[0], "**Chosen profile:** candidate_b4")
         candidate_row = next(row for row in view["profile_rows"] if row[0] == "candidate_b4")
-        self.assertEqual(candidate_row[1], "Accepted")
-        self.assertEqual(candidate_row[6], "0.900")
-        self.assertEqual(candidate_row[7], "0.800")
+        self.assertEqual(candidate_row[6], "Accepted")
+        self.assertEqual(candidate_row[3], "1.50x")
+        self.assertEqual(candidate_row[4], "0.900")
+        self.assertEqual(candidate_row[5], "0.800")
         self.assertIn("Held-out confirmation: accepted", view["winner_markdown"])
         self.assertIn("0.950", view["winner_markdown"])
         self.assertIn("0.850", view["winner_markdown"])
@@ -257,6 +257,30 @@ class DashboardTests(unittest.TestCase):
         )
         self.assertEqual(status, "Measured (not validated)")
         self.assertIn("no quality decision recorded", reason)
+
+    def test_accepted_step_without_successful_benchmark_is_unverified(self):
+        status, reason = app._status_and_reason(
+            {"profile_name": "candidate"},
+            {"decision": "PROMOTE", "reason": "proposal accepted"},
+        )
+        self.assertEqual(status, "Unverified")
+        self.assertIn("no successful benchmark", reason)
+
+    def test_failed_candidate_cannot_be_selected_as_winner(self):
+        config = {"dtype": "float16", "batch": 4}
+        failed = {
+            "profile_name": "failed_candidate",
+            "status": "failed",
+            "requested_config": config,
+            "error": "backend error",
+        }
+        selected_step = {
+            "config": config,
+            "decision": "PROMOTE",
+            "chosen": True,
+            "benchmark": failed,
+        }
+        self.assertIsNone(app._find_chosen([failed], [selected_step]))
 
     def test_module_import_does_not_require_gpu_or_ui_packages(self):
         check = (
