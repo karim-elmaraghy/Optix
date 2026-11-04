@@ -1,6 +1,8 @@
-# OptiLoop — reproduce the submission demo
+# Tunix — reproduce the submission demo
 
-OptiLoop measures Llama-3.2-1B-Instruct inference on a Tesla T4 and separates
+Tunix is an AI-powered GPU inference optimization agent, with a lightweight
+landing page and interactive optimization workbench. It measures
+Llama-3.2-1B-Instruct inference on a Tesla T4 and separates
 raw speed from quality approval. The committed V2 batch-8 run measured
 **5.63× raw throughput and 81.8% less energy** vs the competent FP16 batch-1
 default. T5 batching passed, but truncation blocks calibration: **no approved
@@ -15,8 +17,16 @@ python -m pip install gradio==6.31.0
 python app.py
 ```
 
-Open **http://127.0.0.1:7860**. Show the headline, then the separate T5 PASS
-and truncation rejection, the profile table and exact rejected document IDs.
+Open **http://127.0.0.1:7860**, then click **Open Workbench**. Configure the
+supported model/workload at the top. **Saved T4 results** never calls Meta;
+**Connected T4 runtime** uses masked credentials (or server environment keys)
+to run the real backend, subject to the existing gates. Credentials are
+cleared from the fields after submission and are not exported or logged.
+Below, compare measured charts and review the separate T5 PASS and truncation
+rejection. **Results / Evidence** contains detailed tables/logs.
+**Validate & export** downloads measured candidate settings with
+`quality_approved:false`; it does not apply a profile. Re-enter your HF token
+for a separate held-out action if it is not set on the server.
 The demo reads original committed Colab JSON, not sample metrics or a live
 Meta optimization. No agent proposals were fabricated. Live Optimize is
 separate and cannot proceed through invalid baseline calibration; Apply
@@ -33,6 +43,10 @@ presented as measured GPU results or live Meta API output.
 
 For an existing local checkout, the integration worktree is
 `C:\Karim\Code\Personal\Optix_\.board\integration`.
+For the review preview on port 7865, set `GRADIO_SERVER_PORT=7865` before
+`python app.py`. Only the connected server GPU is detected, never a visitor's
+local GPU. T4 / Llama 3.2 1B / CNN-DailyMail is the only supported live path.
+The `optiloop` Python module names and original measured JSON remain unchanged.
 
 ---
 

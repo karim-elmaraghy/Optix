@@ -1,4 +1,4 @@
-# OptiLoop dashboard
+# Tunix dashboard
 
 From the repository root, install the UI dependency and launch the dashboard:
 

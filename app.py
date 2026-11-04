@@ -1,4 +1,4 @@
-"""OptiLoop's results-first Gradio dashboard.
+"""Tunix's results-first Gradio dashboard.
 
 Run with ``python app.py`` after installing Gradio. This module deliberately
 keeps GPU and benchmark dependencies out of its import path.
@@ -31,7 +31,7 @@ KNOWN_PROFILES = (
     "fp16_sdpa_b4_compile",
     "fp16_sdpa_b1_cap64",
 )
-TITLE = "OptiLoop - Find the fastest correct profile for YOUR GPU"
+TITLE = "Tunix - Find the fastest correct profile for YOUR GPU"
 CSS = """
 :root {
   --canvas: #F7F6F2;
@@ -237,11 +237,11 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
     return records
 
 
-def load_dashboard_data(results_dir: Path = RESULTS_DIR) -> dict[str, Any]:
+def load_dashboard_data(results_dir: Path = RESULTS_DIR, *, follow_session=True) -> dict[str, Any]:
     """Load real results when present, otherwise the explicitly marked samples."""
     results_dir = Path(results_dir)
     pointer = results_dir / 'current_session.json'
-    if pointer.is_file():
+    if pointer.is_file() and follow_session:
         directory = _read_json(pointer).get('directory', '')
         candidate = (results_dir / directory).resolve()
         if candidate.parent == results_dir.resolve() and candidate.is_dir():
@@ -940,13 +940,13 @@ def confirm_action(snapshot):
         RUN_LOCK.release()
 
 
-def create_app() -> Any:
+def _create_evidence_app() -> Any:
     import gradio as gr
 
     with gr.Blocks(title=TITLE) as demo:
         with gr.Row(elem_classes=["hero"]):
             with gr.Column(scale=5):
-                gr.Markdown("OPTILOOP  /  INFERENCE WORKBENCH", elem_classes=["eyebrow"])
+                gr.Markdown("TUNIX  /  INFERENCE WORKBENCH", elem_classes=["eyebrow"])
                 gr.Markdown("# Find the fastest correct profile.")
                 gr.Markdown(
                     "Compare measured inference profiles, review the evidence, and keep quality in view.",
@@ -962,7 +962,7 @@ def create_app() -> Any:
             with gr.Column(scale=3, elem_classes=["surface", "optix-card"]):
                 gr.Markdown(
                     "### A careful search for better inference\n\n"
-                    "OptiLoop tests configurations against a competent default, "
+                    "Tunix tests configurations against a competent default, "
                     "then checks whether a faster profile preserves output quality. "
                     "A benchmark result is not a quality pass by itself.",
                     elem_classes=["overview-copy"],
@@ -1057,7 +1057,7 @@ def create_app() -> Any:
                 )
 
         gr.Markdown(
-            "OptiLoop  ·  Evidence from saved results only  ·  GPU and optimizer execution are not implied by this interface",
+            "Tunix  ·  Evidence from saved results only  ·  GPU and optimizer execution are not implied by this interface",
             elem_classes=["quiet"],
         )
 
@@ -1080,11 +1080,21 @@ def create_app() -> Any:
     return demo
 
 
+from optiloop.workbench_ui import CSS
+
+
+def create_app() -> Any:
+    from optiloop.workbench_ui import create_workbench
+    return create_workbench()
+
+
 if __name__ == "__main__":
     import gradio as gr
 
     app = create_app()
     app.launch(
+        favicon_path=str(ROOT / 'assets' / 'optiloop-mark.svg'),
+        server_port=int(os.environ.get('GRADIO_SERVER_PORT', '7860')),
         share=os.environ.get('GRADIO_SHARE', '0') == '1',
         server_name=os.environ.get("GRADIO_SERVER_NAME", "127.0.0.1"),
         theme=gr.themes.Soft(primary_hue="cyan", secondary_hue="slate", neutral_hue="slate"),

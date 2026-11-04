@@ -1,4 +1,4 @@
-# Integrated OptiLoop demonstration
+# Integrated Tunix demonstration
 
 This branch combines PR #4 (9068273), PR #5 (4eee925), and PR #6
 (710db1f) without changing their active branches. Additional application wiring

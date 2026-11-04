@@ -1,4 +1,4 @@
-# OptiLoop — Google Colab T4 instructions (Gate 1)
+# Tunix — Google Colab T4 instructions (Gate 1)
 
 > **Prompt V2 (current):** prompts are rendered through the Llama 3.2
 > chat template with a generation prompt. Earlier V1 runs fed raw text
