@@ -9,6 +9,43 @@ import app
 
 
 class DashboardTests(unittest.TestCase):
+    def test_issue_2_benchmark_result_list_schema_is_loaded(self):
+        item = {
+            "profile_name": "default_fp16_sdpa_b1",
+            "status": "success",
+            "error": None,
+            "requested_config": {
+                "dtype": "float16",
+                "attn": "sdpa",
+                "batch": 1,
+                "compile": False,
+                "max_new_tokens": 128,
+            },
+            "actual_config": {
+                "dtype": "float16",
+                "attn": "sdpa",
+                "batch": 1,
+                "compile": False,
+                "max_new_tokens": 128,
+            },
+            "repeats": 3,
+            "total_time_sec": {"median": 10.0, "min": 9.0, "max": 11.0},
+            "latency_p50_sec": 1.0,
+            "latency_p95_sec": 1.2,
+            "docs_per_sec": 2.0,
+            "tokens_per_sec": 20.0,
+            "joules_per_doc": 3.0,
+            "idle_power_w": 5.0,
+            "compile_time_sec": None,
+            "noisy": False,
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "benchmark_20261104T000000.json"
+            path.write_text(json.dumps([item]), encoding="utf-8")
+            loaded = app._load_benchmark(path)
+
+        self.assertEqual(loaded, [item])
+
     def test_empty_results_are_explicitly_not_run(self):
         with tempfile.TemporaryDirectory() as temporary:
             results = Path(temporary)
@@ -22,9 +59,10 @@ class DashboardTests(unittest.TestCase):
 
         self.assertIn("SAMPLE DATA - NOT REAL RESULTS", view["banner"])
         self.assertIn("No real benchmark result set", view["banner"])
-        self.assertEqual([row[1] for row in view["profile_rows"]], ["Not run", "Not run"])
+        self.assertTrue(all(row[1] == "Not run" for row in view["profile_rows"]))
         self.assertEqual(view["chart_rows"], [])
         self.assertFalse(data["has_real_benchmarks"])
+        self.assertIn("fp16_sdpa_b4_compile", [row[0] for row in view["profile_rows"]])
 
     def test_real_json_values_and_reasons_are_used(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -201,6 +239,24 @@ class DashboardTests(unittest.TestCase):
 
     def test_safe_apply_fails_closed_without_real_results(self):
         self.assertIn("Not applied", app.safe_apply(None))
+
+    def test_safe_apply_does_not_claim_activation_without_runtime_callback(self):
+        response = app.safe_apply(
+            {
+                "has_real_benchmarks": True,
+                "chosen": {"profile_name": "candidate"},
+            }
+        )
+        self.assertIn("no active inference runtime", response)
+        self.assertIn("no profile was activated or rolled back", response)
+
+    def test_successful_benchmark_without_validator_decision_is_measured_only(self):
+        status, reason = app._status_and_reason(
+            {"status": "success", "docs_per_sec": 1.2},
+            None,
+        )
+        self.assertEqual(status, "Measured (not validated)")
+        self.assertIn("no quality decision recorded", reason)
 
     def test_module_import_does_not_require_gpu_or_ui_packages(self):
         check = (
