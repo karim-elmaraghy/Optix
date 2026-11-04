@@ -114,6 +114,6 @@ class ApplicationTests(unittest.TestCase):
     def test_prompt_version_mismatch_blocks_confirmation_before_gpu_work(self):
         with tempfile.TemporaryDirectory() as tmp:
             session = run_optimization(tmp, 1, runner=runner, workload=workload, completion=completion, space=[DEFAULT])
-            with patch('optiloop.application.prompt_version', return_value='v2-chat-template'):
+            with patch('optiloop.application.prompt_version', return_value='synthetic-different-version'):
                 with self.assertRaisesRegex(ValueError, 'prompt version changed'):
                     confirm_heldout(session, runner=runner, workload=workload)

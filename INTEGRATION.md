@@ -5,6 +5,39 @@ This branch combines PR #4 (9068273), PR #5 (4eee925), and PR #6
 lives in `optiloop/application.py`, `optiloop/integration.py`, and `app.py`.
 No benchmark JSON keys or rejection-log schemas were changed.
 
+## V2 Gate 1 update (owner-reported; original artifacts pending)
+
+Muse V2 `6ac0558` is now integrated here, retaining its commit history.
+Prompt version is `v2-chat-template`. Karim reports these real T4 results;
+Codex has not rerun them or verified the original JSON yet:
+
+| Profile | docs/s | J/doc | Reported cap flags |
+|---|---:|---:|---:|
+| FP32 B1 | 0.3162 | 118.28 | not supplied |
+| FP16 default B1 | 0.3522 | 108.27 | 5/20 |
+| FP16 B4 | 1.2863 | 29.43 | 5/20 |
+| FP16 B8 | 1.9822 | 19.67 | 5/20 |
+| FP16 B1 cap64 | 0.6205 | 61.18 | 20/20 |
+
+Both V2 batch checks reportedly passed T5 (minimum F1=1.000). B8's raw
+speedup is 5.63x and energy reduction approximately 81.8%, **measured but
+not quality-approved**. This supersedes the V1 T5 failure only for V2;
+do not combine their baselines or calibration. The dashboard computes raw
+speedup from original JSON once supplied; no narrative values were inserted
+into benchmark JSON or hardcoded dashboard measurement fields.
+
+Strict calibration remains BLOCKED: default B1 has five cap-reaching outputs.
+No document is silently excluded and no threshold is weakened. Cap64 remains
+rejected. Held-out confirmation has not passed; no approved winner or Apply
+demonstration exists. Calibration requires valid default AND naive outputs;
+the FP32 truncation status also needs examination when JSON arrives.
+
+Muse was asked on the board to inspect the five baseline outputs and actual
+generation-stop evidence, including possible EOS at the last allowed token.
+Counts alone cannot distinguish EOS-at-cap from a true cutoff (the counter
+includes EOS). Until evidence and any owner-approved resolution are available,
+all such flags remain rejections. No prompt/cap/methodology change is made here.
+
 ## Final readiness and V2 handoff
 
 Readiness check: the integrated Gradio application was actually launched on
@@ -27,12 +60,10 @@ viewer starts without a GPU or Meta credentials; do not click Optimize merely
 to show saved data. If original files are absent, demonstrate sample/not-run
 state honestly and mark real-data verification pending.
 
-Muse's pushed V2 commit `6ac0558` was inspected read-only; it is not yet
-included in this integration branch. It adds workload `messages` and
+Muse's V2 commit `6ac0558` is included in this integration branch. It adds workload `messages` and
 `PROMPT_VERSION`, and renders the official chat template in the benchmark;
 `run_config` arguments and result schemas remain compatible. The adapter
-preserves entire workload documents including `article`/`messages`. After
-owner review, bring that commit into the integration branch only, restart
+preserves entire workload documents including `article`/`messages`. Restart
 the Python process, run the combined CPU suite and start a NEW optimization
 session with fresh default and naive baselines. Never reuse V1 calibration
 or compare V2 candidates to V1 outputs. Session metadata now records prompt
@@ -40,7 +71,7 @@ version, and held-out confirmation refuses cross-version sessions before
 GPU work. Existing unversioned sessions are treated as V1. Validator
 thresholds, token caps and benchmark methodology were not changed here.
 
-## Reported real T4 tuning findings: calibration blocked
+## Historical V1 T4 findings (separate from V2): calibration blocked
 
 Owner-supplied Colab results (not independently rerun by Codex, and not
 converted into measured result JSON from this narrative):
@@ -142,7 +173,8 @@ The integration author tested localhost startup only, not public sharing.
 1. Start with saved Gate 1 files in `results/` if available; otherwise the
    dashboard explicitly displays sample/not-run state. Do not create result
    files from the supplied narrative numbers. Existing raw T4 batch-4 and
-   batch-8 results failed T5 and are not approved winners.
+   batch-8 V1 results failed T5. V2 reportedly passed T5 but remains blocked
+   by truncation/quality calibration; neither run has an approved winner.
 2. Click **Request Meta optimization**. This performs real GPU work: both
    tuning baselines, a default repeat for T1 (>=99% matching output text),
    up to eight Meta-selected experiments, and matching batch-1 references

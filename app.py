@@ -595,9 +595,11 @@ def build_dashboard_view(data: dict[str, Any]) -> dict[str, Any]:
     session_status = data.get('session_status') or {}
     if session_status.get('state') == 'blocked':
         banner += '\n\n**Calibration BLOCKED:** ' + session_status.get('message', 'invalid baseline outputs') + '. No accepted winner.'
-    banner += ('\n\n**Raw speed is not approval.** Reported T4 batch-4 and batch-8 runs failed T5; '
-               'their raw speedups are not quality-approved. Integrated search requires per-document F1 >= 0.95. '
+    banner += ('\n\n**Raw speed is not approval.** Owner-reported V2 batching checks passed T5; V1 failed. '
+               'V2 baseline truncation still blocks strict calibration, and held-out approval is pending. '
+               'Integrated search requires per-document F1 >= 0.95. '
                'GPU activation/rollback remains unverified.')
+    banner += '\n\n**Loaded artifact prompt version:** ' + str(session_status.get('prompt_version', 'unversioned / not verified; do not mix V1 and V2'))
 
     runtime_gpu, _ = _gpu_info()
     benchmark_gpu, model = _result_metadata(benchmarks)
@@ -941,7 +943,7 @@ def create_app() -> Any:
                 "Profile",
                 "docs/s",
                 "J / doc",
-                "vs competent default",
+                "Raw vs default (not approval)",
                 "Quality F1",
                 "ROUGE-L",
                 "Validation",
