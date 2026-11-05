@@ -36,7 +36,28 @@ retains its explicit rule_fallback behavior. A ping proves connectivity only.
 An advisory proposal proves neither benchmark execution nor quality approval nor
 deployment. No optimizer, validator, or safe-apply gate is changed.
 
-This checkout has no Tunix CLI/workbench or authentic V2 benchmark artifacts.
-Workbench integration and a demonstration using that history remain pending their
-availability. The sanitized local verification record reports missing credentials
-as unverified, never as a successful API call.
+For the authentic V2 archive, use the read-only adapter:
+
+```powershell
+.venv/Scripts/python.exe -m optiloop.meta_planner --v2-benchmark "C:\Karim\Code\Personal\Optix_\.board\integration\results\benchmark_20261104T211417.json" --allowed docs/meta-allowed-v2.json --output meta-v2-proposal.json
+```
+
+Run from the feature checkout with MODEL_API_KEY already set securely in the
+environment. This makes one real request when the key is present. Use a fresh
+output name for each run. A missing key writes an unverified record without a
+network call. The output must be outside the original artifact directory.
+
+The adapter reads benchmark, session, validation report and matching output
+bundles. It checks the report's artifact hashes, V2 metadata, profile/config
+identity and tuning splits. These checks establish consistency of the supplied
+archive, not independent certification of GPU execution. It submits the original
+benchmark rows and the session/validation context, including blocked calibration,
+with provenance hashes of all read files. It does not submit document text.
+
+`meta-allowed-v2.json` is an explicit 24-configuration snapshot of the integration
+checkout's `optiloop/profiles.py` SPACE: dtype x attention x batch x token cap,
+compile=false. It is configuration data, not benchmark data. Review the permitted
+space if that contract changes. The examined session is measured V2, imported
+from user-supplied Colab evidence, calibration blocked by truncation, winner=null.
+The planner remains usable for advice in that state; execution remains blocked
+by the optimizer's existing gate. No workbench UI changes are included.
