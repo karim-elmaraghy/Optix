@@ -119,7 +119,7 @@ def launch_report(results, port, browser=True, replay=False):
     demo = app.create_app()
     print(f'Tunix report: http://127.0.0.1:{port} — data: {results}')
     demo.launch(server_name='127.0.0.1',server_port=port,share=False,inbrowser=browser,max_file_size="32mb",
-                favicon_path=str(Path(app.__file__).parent/'assets'/'optiloop-mark.svg'),css=app.CSS)
+                favicon_path=str(Path(app.__file__).parent/'assets'/'tunix-symbol.svg'),css=app.CSS)
 
 
 def main(argv=None):

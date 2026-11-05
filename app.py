@@ -1104,7 +1104,7 @@ if __name__ == "__main__":
     app = create_app()
     app.launch(
         max_file_size="32mb",
-        favicon_path=str(ROOT / 'assets' / 'optiloop-mark.svg'),
+        favicon_path=str(ROOT / 'assets' / 'tunix-symbol.svg'),
         server_port=int(os.environ.get('GRADIO_SERVER_PORT', '7860')),
         share=os.environ.get('GRADIO_SHARE', '0') == '1',
         server_name=os.environ.get("GRADIO_SERVER_NAME", "127.0.0.1"),

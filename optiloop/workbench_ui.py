@@ -14,7 +14,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 CSS = (ROOT / 'assets' / 'workbench.css').read_text(encoding='utf-8')
-MARK = (ROOT / 'assets' / 'optiloop-mark.svg').read_text(encoding='utf-8')
+MARK = (ROOT / 'assets' / 'tunix-symbol.svg').read_text(encoding='utf-8')
 MODEL = 'meta-llama/Llama-3.2-1B-Instruct'
 WORKLOAD = 'CNN/DailyMail summarization · 20 tuning / 10 held-out'
 REPLAY = 'Saved T4 results'
@@ -88,7 +88,7 @@ def runtime_status():
             '\n\nOnly a connected Tesla T4 is supported for live execution. This detects the server, not your browser’s GPU.')
 
 
-def stats_and_charts(data):
+def stats_and_charts(data, *, landing=False):
     import app
     items = [r for r in data['benchmarks'] if r.get('status') == 'success']
     by_name = {r['profile_name']: r for r in items}
@@ -98,10 +98,11 @@ def stats_and_charts(data):
     energy = app._percent_saving(b8.get('joules_per_doc'), base.get('joules_per_doc')) if measured else None
     cards = [('RAW THROUGHPUT', f'{speed:.2f}×' if speed else '—', 'Batch 8 vs competent default · not approval'),
              ('ENERGY REDUCTION', f'{energy:.1f}%' if energy is not None else '—', 'Measured joules per document'),
-             ('QUALITY APPROVAL', 'Blocked' if data.get('session_status', {}).get('state') == 'blocked' else 'Pending', 'No configuration is approved'),
+             ('QUALITY APPROVAL', 'Withheld' if data.get('session_status', {}).get('state') == 'blocked' else 'Pending', 'No configuration is approved'),
              ('EVIDENCE', 'Imported' if data.get('session_status',{}).get('kind')=='imported' else 'Measured' if measured else 'Sample',
               'Imported GPU results · not live Meta output' if data.get('session_status',{}).get('kind')=='imported' else 'Saved T4 replay · not live Meta output' if data.get('artifact_validation') else 'Recorded project evidence · not a new run')]
-    stats = '<div class="stat-grid">' + ''.join(
+    if landing: cards=cards[:2]
+    stats = '<div class="stat-grid'+(' landing-proof' if landing else '')+'">' + ''.join(
         f'<div class="stat"><div class="label">{a}</div><div class="value {"amber" if i==2 else ""}">{b}</div><div class="detail">{c}</div></div>'
         for i, (a,b,c) in enumerate(cards)) + '</div>'
     charts = '<div class="chart-grid">'
@@ -128,13 +129,13 @@ def status_panel(data):
     rows = [('Baseline', 'Measured' if measured else 'Not measured', 'pass' if measured else ''),
             ('Meta search', 'Recorded Meta steps' if meta_steps else 'Not run / no Meta steps', ''),
             ('T5 batch consistency', 'Pass' if t5.get('passed') else 'Not verified', 'pass' if t5.get('passed') else ''),
-            ('Quality calibration', 'Blocked' if blocked else 'Pending', 'warn'),
+            ('Quality gate', 'Approval withheld' if blocked else 'Pending', 'warn'),
             ('Approved winner', 'None', 'warn')]
     diagnostics = state.get('diagnostics', [])
     default_count = sum(d.get('baseline') == 'competent_default' for d in diagnostics)
     naive_count = sum(d.get('baseline') == 'naive' for d in diagnostics)
-    details = (f'Default baseline: {default_count} invalid outputs. FP32 baseline: {naive_count}. '
-               'Strict calibration cannot proceed. T5 passes separately; it does not prove complete summaries.') if blocked else 'No full quality approval is recorded.'
+    details = (f'{default_count} of 20 baseline summaries reached the generation limit, so the results are measured but not approved for deployment. '
+               f'FP32 also has {naive_count} invalid outputs. Strict calibration remains BLOCKED; T5 PASS is a separate check.') if blocked else 'No full quality approval is recorded.'
     if blocked and not diagnostics: details=html.escape(state.get('message','Calibration is blocked by missing evidence.'))
     return ('<div class="status-label">CURRENT STATE · SAVED EVIDENCE</div>' +
             ''.join(f'<div class="status-row"><span>{label}</span><span class="pill {css}">{value}</span></div>' for label,value,css in rows) +
@@ -243,19 +244,26 @@ def create_workbench():
     initial = session_data(default_selection)
     view = app.build_dashboard_view(initial)
     stats, charts = stats_and_charts(initial)
-    with gr.Blocks(title='Tunix · Inference optimization', analytics_enabled=False) as demo:
-        gr.HTML(f'<div class="nav"><div class="brand">{MARK}<span>Tunix</span></div><div class="nav-note">LESS GUESSWORK. BETTER INFERENCE.</div></div>')
+    landing_stats,_ = stats_and_charts(initial,landing=True)
+    with gr.Blocks(title='Tunix. · Measure performance. Verify behavior.', analytics_enabled=False) as demo:
+        gr.HTML(f'<div class="nav"><div class="brand">{MARK}<span>Tunix.</span></div><div class="nav-note">MEASURE PERFORMANCE. VERIFY BEHAVIOR.</div></div>')
         with gr.Group(visible=True) as landing:
             with gr.Row():
                 with gr.Column(scale=6):
-                    gr.HTML('<div class="landing-copy"><div class="eyebrow">YOUR MODEL. YOUR HARDWARE. BETTER TOGETHER.</div><h1>Find your model’s<br>next gear.</h1><p>Analyze your model + hardware, test configurations, and find the fastest correct inference profile.</p></div>')
-                    open_button = gr.Button('Open Workbench  →', variant='primary', elem_classes=['cta'])
-                    gr.HTML('<div class="small-note">T4-first MVP · real measurements · strict quality gates</div>')
-                    gr.Code('python -m pip install -e .\ntunix doctor\ntunix init\ntunix report --replay',language='shell',label='Install from the Tunix checkout · VS Code terminal',interactive=False)
+                    gr.HTML('<div class="landing-copy"><div class="eyebrow">LOCAL INTELLIGENCE. MEASURABLE IMPROVEMENT.</div><h1>Measure performance.<br>Verify behavior.</h1><p>An AI agent for your GPU runtime. Test inference configurations, compare real measurements, and keep correctness in control.</p></div>')
+                    with gr.Row(elem_classes=['hero-actions']):
+                        install_button=gr.Button('Install Tunix',variant='primary',elem_classes=['cta'])
+                        open_button = gr.Button('Open Workbench  →', variant='secondary', elem_classes=['cta'])
+                    gr.HTML('<div class="small-note">Developer-installed CLI · runs on your GPU machine, not inside the browser</div>')
                 with gr.Column(scale=5):
                     gr.HTML(f'<div class="art"><div class="art-chip chip-a">↗ &nbsp; Measure the baseline</div><div class="art-chip chip-b">✓ &nbsp; Check correctness</div>{MARK}<div class="art-label">INTELLIGENCE, IN THE LOOP.</div><div class="art-chip chip-c">◎ &nbsp; Test. Compare. Refine.</div></div>')
-            landing_stats = gr.HTML(stats)
-            gr.HTML('<div class="small-note">Proof from saved Tesla T4 runs. Raw gains are not quality approval; calibration remains blocked.</div>')
+            with gr.Group(visible=False,elem_classes=['install-section']) as installation:
+                gr.Markdown('## Install Tunix\n\nClone the repository and install locally. Tunix is not published on PyPI. The CLI runs on the GPU machine; the workbench inspects its evidence.')
+                gr.Code('git clone --branch integration-optiloop https://github.com/karim-elmaraghy/Optix.git\ncd Optix\npython -m venv .venv\n# Windows / VS Code:\n.\\.venv\\Scripts\\Activate.ps1\n# macOS / Linux: source .venv/bin/activate\npython -m pip install -e .\ntunix doctor\ntunix init\ntunix report --replay --port 7865',language='shell',label='Copy installation commands',interactive=False,buttons=['copy'],show_line_numbers=False,wrap_lines=True,lines=11)
+                gr.Markdown('**Supported live MVP:** CUDA Tesla T4 + Llama 3.2 1B Instruct + CNN/DailyMail. Install `python -m pip install -e ".[gpu]"` on the T4 runtime; gated HF access is required. Replay needs no GPU or API key.\n\n[GitHub](https://github.com/karim-elmaraghy/Optix/tree/integration-optiloop) · [Windows / VS Code guide](https://github.com/karim-elmaraghy/Optix/blob/integration-optiloop/DEVELOPER.md) · [Google Colab export → import guide](https://github.com/karim-elmaraghy/Optix/blob/integration-optiloop/COLAB_TRANSFER.md)')
+            gr.HTML('<div class="proof-line">MEASURED EVIDENCE, NOT PROMISES</div>')
+            gr.HTML(landing_stats)
+            gr.HTML('<div class="small-note">Raw throughput and energy comparisons from saved T4 evidence. Tunix verifies output quality separately; raw gains are never deployment approval.</div>')
         with gr.Group(visible=False) as workbench:
             with gr.Row():
                 with gr.Column(scale=8):
@@ -264,9 +272,10 @@ def create_workbench():
                     home_button = gr.Button('← Overview', size='sm')
             gr.HTML('<div class="workflow"><strong>01 Configure</strong><i>→</i><span>02 Optimize</span><i>→</i><span>03 Compare</span><i>→</i><span>04 Validate</span><i>→</i><span>05 Apply</span></div>')
             snapshot = gr.State(view['snapshot'])
-            with gr.Row():
-                sessions=gr.Dropdown(session_choices(),value=default_selection,label='Evidence session',allow_custom_value=False)
-                upload=gr.File(label='Import benchmark results · ZIP, up to 32 MiB',file_types=['.zip'],type='filepath')
+            gr.Markdown('### Import your benchmark results\n\nRun Tunix on your GPU, export a results ZIP, then import it here to inspect your measurements.')
+            with gr.Row(elem_classes=['import-section']):
+                upload=gr.File(label='Import benchmark results · Import ZIP / Browse files · up to 32 MiB',file_types=['.zip'],type='filepath',height=145)
+                sessions=gr.Dropdown(session_choices(),value=default_selection,label='Current selected evidence session · includes verified T4 replay',allow_custom_value=False)
             import_status=gr.Textbox(label='Import status',interactive=False,lines=2)
             with gr.Row(equal_height=True):
                 with gr.Column(scale=7, elem_classes=['config-card']):
@@ -319,6 +328,7 @@ def create_workbench():
             return view_outputs(selection,current_mode)
         outputs = [stat_cards,chart,status,snapshot,profiles,winner,banner,baselines,rejections,agent_log,apply_summary,pipeline_view,source]
         open_button.click(lambda:(gr.update(visible=False),gr.update(visible=True)),outputs=[landing,workbench],api_name=False)
+        install_button.click(lambda:gr.update(visible=True),outputs=installation,api_name=False)
         home_button.click(lambda:(gr.update(visible=True),gr.update(visible=False)),outputs=[landing,workbench],api_name=False)
         def configured(*args):
             message = run_configured(*args)

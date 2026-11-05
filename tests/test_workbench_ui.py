@@ -47,7 +47,7 @@ class WorkbenchTests(unittest.TestCase):
         self.assertIn('5.63\u00d7',cards)
         self.assertIn('81.8%',cards)
         self.assertIn('not approval',cards)
-        self.assertIn('Blocked',cards)
+        self.assertIn('Withheld',cards)
         self.assertIn('raw measured comparison',charts)
         with patch('optiloop.workbench_ui.subprocess.run') as probe:
             probe.return_value.returncode=0
