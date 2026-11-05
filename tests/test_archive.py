@@ -123,6 +123,7 @@ class ArchiveTests(unittest.TestCase):
         bad=dict(originals);items=json.loads(bad[NAMES[0]]);items[0]['repeats']='two';bad[NAMES[0]]=json.dumps(items).encode();variants.append(bad)
         bad=dict(originals);bad['tunix_export.json']=b'{"format":"tunix-results-v1","files":{}}';variants.append(bad)
         bad=dict(originals);bundle=json.loads(bad[NAMES[1]]);bundle['docs'][0]['n_output_tokens']=True;bad[NAMES[1]]=json.dumps(bundle).encode();variants.append(bad)
+        bad=dict(originals);bundle=json.loads(bad[NAMES[1]]);bundle['docs'][0]['output_text']='a.'*600;bad[NAMES[1]]=json.dumps(bundle).encode();variants.append(bad)
         with tempfile.TemporaryDirectory() as tmp:
             for i,files in enumerate(variants):
                 p=write_zip(Path(tmp)/f'bad{i}.zip',files.items())

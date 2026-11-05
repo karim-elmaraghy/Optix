@@ -17,13 +17,14 @@ import zipfile
 
 from .agent import check_config, execution_reasons
 from .integration import batching_reasons
-from .validator import CalibrationBlocked, calibrate, index_docs, invalid_reasons, rouge_l, token_f1, validate
+from .validator import CalibrationBlocked, calibrate, index_docs, invalid_reasons, rouge_l, token_f1, tokens, validate
 
 MAX_ZIP = 32 * 1024 * 1024
 MAX_FILE = 8 * 1024 * 1024
 MAX_TOTAL = 64 * 1024 * 1024
 MAX_FILES = 128
 MAX_RATIO = 100
+MAX_ANALYSIS_CELLS = 50_000_000
 METADATA = {'session.json','validation_report.json','confirmation_context.json',
             'agent_log.json','apply_log.jsonl','dashboard_apply_log.jsonl','tunix_export.json'}
 
@@ -56,7 +57,7 @@ def strict_json(raw):
 
 
 def parse_payloads(payloads):
-    parsed={}
+    parsed={}; analysis_cells=0
     for name,raw in payloads.items():
         if name.endswith('.jsonl') or PurePosixPath(name).name=='agent_log.json':
             try: value=strict_json(raw)
@@ -106,9 +107,12 @@ def parse_payloads(payloads):
                         if not isinstance(d['output_text'],str) or not isinstance(d['gold_summary'],str):
                             raise ValueError('invalid text')
                         # Bound quadratic ROUGE-L work as well as ZIP expansion.
-                        if (len(d['output_text'])>16384 or len(d['gold_summary'])>16384 or
-                            len(d['output_text'].split())>512 or len(d['gold_summary'].split())>512):
+                        if len(d['output_text'])>16384 or len(d['gold_summary'])>16384:
                             raise ValueError('summary exceeds supported analysis limits')
+                        n_output,n_gold=len(tokens(d['output_text'])),len(tokens(d['gold_summary']))
+                        if n_output>512 or n_gold>512: raise ValueError('summary token analysis limit exceeded')
+                        analysis_cells+=n_output*(n_gold+512)
+                        if analysis_cells>MAX_ANALYSIS_CELLS: raise ValueError('archive exceeds quality analysis work budget')
                     index_docs(value,split)
                 except (KeyError,TypeError,AttributeError) as exc:
                     raise ValueError('invalid output document') from exc
