@@ -271,7 +271,7 @@ def load_dashboard_data(results_dir: Path = RESULTS_DIR, *, follow_session=True)
     else:
         selected_agent_path = sample_dir / "agent_log_sample.json"
     try:
-        agent_steps = _load_agent_steps(selected_agent_path)
+        agent_steps = _load_agent_steps(selected_agent_path) if selected_agent_path.is_file() else []
     except (OSError, json.JSONDecodeError, ValueError) as error:
         agent_steps = []
         errors.append(f"Could not load agent log from {selected_agent_path}: {error}")
@@ -380,11 +380,15 @@ def _status_and_reason(
     report = (artifact_validation or {}).get('profiles', {}).get(result.get('profile_name'), {})
     if report and report.get('config') == result.get('requested_config'):
         reasons = report.get('reasons', [])
-        note = 'Artifact validator: ' + ', '.join(reasons) if reasons else 'Quality calibration is blocked'
+        note = ('Artifact validator: ' + ', '.join(reasons) if reasons else
+                'Quality calibration is blocked' if (artifact_validation or {}).get('calibration')=='blocked' else
+                'Tuning checks computed; full approval and held-out confirmation remain unverified')
         if report.get('flagged_docs'):
             note += '; docs: ' + ', '.join(str(d['doc_id']) for d in report['flagged_docs'])
         if report.get('t5'):
-            note += '; T5 ' + ('PASS' if report['t5']['passed'] else 'FAIL') + f" (min F1 {report['t5']['min_f1']:.3f})"
+            minimum=report['t5'].get('min_f1')
+            note += '; T5 ' + ('PASS' if report['t5']['passed'] else 'FAIL')
+            if isinstance(minimum,(float,int)): note += f" (min F1 {minimum:.3f})"
         return ('Rejected' if reasons else 'Measured (not validated)'), note
     decision = _decision(step or {})
     if decision in {"reject", "rejected", "fail", "failed"}:
@@ -622,7 +626,11 @@ def build_dashboard_view(data: dict[str, Any]) -> dict[str, Any]:
         banner += '\n\n**Calibration BLOCKED:** ' + session_status.get('message', 'invalid baseline outputs') + '. No accepted winner.'
     if data.get('artifact_validation'):
         banner += '\n\n**Artifact checks:** ' + '; '.join(data['artifact_validation'].get('remaining_checks', []))
-    banner += ('\n\n**Raw speed is not approval.** Owner-reported V2 batching checks passed T5; V1 failed. '
+    if session_status.get('kind') in ('imported','synthetic'):
+        banner += ('\n\n**Imported evidence, not live Meta optimization.** Uploaded approval claims are not trusted. '
+                   'T5 and completeness are recomputed separately; missing checks remain unverified. No full approval inferred.')
+    else:
+        banner += ('\n\n**Raw speed is not approval.** Owner-reported V2 batching checks passed T5; V1 failed. '
                'V2 baseline truncation still blocks strict calibration, and held-out approval is pending. '
                'Integrated search requires per-document F1 >= 0.95. '
                'GPU activation/rollback remains unverified.')
@@ -632,9 +640,11 @@ def build_dashboard_view(data: dict[str, Any]) -> dict[str, Any]:
         raw = _speedup(measured_b8.get('docs_per_sec'), competent.get('docs_per_sec'))
         saving = _percent_saving(measured_b8.get('joules_per_doc'), competent.get('joules_per_doc'))
         if raw is not None and saving is not None:
+            approval_state='BLOCKED' if session_status.get('state')=='blocked' else 'PENDING'
+            evidence_caption=('imported artifacts; hardware not independently verified' if session_status.get('kind')=='imported' else 'saved Tesla T4 measurements')
             banner = (f'## {raw:.2f}× raw throughput · {saving:.1f}% less energy\n\n'
-                      '**FP16 batch 8 vs competent FP16 batch 1 · saved Tesla T4 measurements**\n\n'
-                      '**QUALITY APPROVAL BLOCKED — no approved winner.** '
+                      f'**FP16 batch 8 vs competent FP16 batch 1 · {evidence_caption}**\n\n'
+                      f'**QUALITY APPROVAL {approval_state} — no approved winner.** '
                       'This is a replay of committed measured evidence, not live Meta API optimization.\n\n'
                       + banner)
         b8_report = data['artifact_validation'].get('profiles', {}).get('fp16_sdpa_b8', {})
@@ -1093,6 +1103,7 @@ if __name__ == "__main__":
 
     app = create_app()
     app.launch(
+        max_file_size="32mb",
         favicon_path=str(ROOT / 'assets' / 'optiloop-mark.svg'),
         server_port=int(os.environ.get('GRADIO_SERVER_PORT', '7860')),
         share=os.environ.get('GRADIO_SHARE', '0') == '1',

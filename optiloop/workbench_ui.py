@@ -19,6 +19,54 @@ MODEL = 'meta-llama/Llama-3.2-1B-Instruct'
 WORKLOAD = 'CNN/DailyMail summarization · 20 tuning / 10 held-out'
 REPLAY = 'Saved T4 results'
 LIVE = 'Connected T4 runtime'
+IMPORTED = 'Imported GPU results'
+
+
+def session_choices():
+    import app
+    choices=[('Bundled V2 replay',':bundled'),('Latest local measurements',':local')]
+    if app.RESULTS_DIR.is_dir():
+        for p in sorted(app.RESULTS_DIR.iterdir(),key=lambda p:p.stat().st_mtime,reverse=True):
+            if p.is_dir() and (p/'session.json').is_file() and p.name.startswith(('import_','run_','benchmark_')):
+                label='Imported GPU results' if p.name.startswith('import_') else 'Local measurement'
+                try:
+                    if json.loads((p/'session.json').read_text(encoding='utf-8')).get('kind')=='synthetic': label='Imported synthetic data'
+                except (ValueError,OSError,AttributeError):
+                    continue
+                choices.append((label+' · '+p.name[-8:],p.name))
+    return choices
+
+
+def session_data(selection):
+    import app
+    if selection==':bundled': return app.load_dashboard_data(ROOT/'results',follow_session=False)
+    if selection==':local': return app.load_dashboard_data(app.RESULTS_DIR)
+    allowed={value for _,value in session_choices() if not value.startswith(':')}
+    if selection not in allowed: raise ValueError('Unknown session selection')
+    path=(app.RESULTS_DIR/selection).resolve()
+    if path.parent!=app.RESULTS_DIR.resolve(): raise ValueError('Invalid session path')
+    return app.load_dashboard_data(path,follow_session=False)
+
+
+def view_outputs(selection, current_mode=REPLAY):
+    import app
+    data=session_data(selection)
+    current=app.build_dashboard_view(data)
+    cards,graphs=stats_and_charts(data)
+    kind=data.get('session_status',{}).get('kind')
+    label=('IMPORTED GPU RESULTS · archive evidence, not live Meta optimization' if kind=='imported' else
+           'IMPORTED SYNTHETIC DATA · not GPU measurements' if kind=='synthetic' else
+           'SAVED T4 REPLAY · no live Meta optimization' if selection==':bundled' else
+           'LOCAL MEASUREMENT EVIDENCE · no new benchmark or Meta call implied')
+    return (cards,graphs,status_panel(data),current['snapshot'],current['profile_rows'],current['winner_markdown'],current['banner'],current['baseline_rows'],current['rejection_rows'],current['agent_rows'],current['apply_summary'],pipeline_html(data),'<div class="source-note">'+label+'</div>')
+
+
+def import_upload(path):
+    """Actual upload handler: imports then returns the fully refreshed view."""
+    import app
+    from .archive import import_archive
+    directory=import_archive(path,app.RESULTS_DIR)
+    return directory.name,view_outputs(directory.name,IMPORTED)
 
 
 def runtime_status():
@@ -51,7 +99,8 @@ def stats_and_charts(data):
     cards = [('RAW THROUGHPUT', f'{speed:.2f}×' if speed else '—', 'Batch 8 vs competent default · not approval'),
              ('ENERGY REDUCTION', f'{energy:.1f}%' if energy is not None else '—', 'Measured joules per document'),
              ('QUALITY APPROVAL', 'Blocked' if data.get('session_status', {}).get('state') == 'blocked' else 'Pending', 'No configuration is approved'),
-             ('EVIDENCE', 'Measured' if measured else 'Sample', 'Saved T4 replay · not live Meta output' if data.get('artifact_validation') else 'Recorded project evidence · not a new run')]
+             ('EVIDENCE', 'Imported' if data.get('session_status',{}).get('kind')=='imported' else 'Measured' if measured else 'Sample',
+              'Imported GPU results · not live Meta output' if data.get('session_status',{}).get('kind')=='imported' else 'Saved T4 replay · not live Meta output' if data.get('artifact_validation') else 'Recorded project evidence · not a new run')]
     stats = '<div class="stat-grid">' + ''.join(
         f'<div class="stat"><div class="label">{a}</div><div class="value {"amber" if i==2 else ""}">{b}</div><div class="detail">{c}</div></div>'
         for i, (a,b,c) in enumerate(cards)) + '</div>'
@@ -86,6 +135,7 @@ def status_panel(data):
     naive_count = sum(d.get('baseline') == 'naive' for d in diagnostics)
     details = (f'Default baseline: {default_count} invalid outputs. FP32 baseline: {naive_count}. '
                'Strict calibration cannot proceed. T5 passes separately; it does not prove complete summaries.') if blocked else 'No full quality approval is recorded.'
+    if blocked and not diagnostics: details=html.escape(state.get('message','Calibration is blocked by missing evidence.'))
     return ('<div class="status-label">CURRENT STATE · SAVED EVIDENCE</div>' +
             ''.join(f'<div class="status-row"><span>{label}</span><span class="pill {css}">{value}</span></div>' for label,value,css in rows) +
             f'<div class="status-explainer">{details}</div>')
@@ -189,7 +239,8 @@ def create_workbench():
     import app
     import gradio as gr
     default_mode = LIVE if os.environ.get('TUNIX_REPORT_MODE') == 'project' else REPLAY
-    initial = app.load_dashboard_data(ROOT/'results' if default_mode == REPLAY else app.RESULTS_DIR, follow_session=default_mode == LIVE)
+    default_selection=':bundled' if default_mode==REPLAY else ':local'
+    initial = session_data(default_selection)
     view = app.build_dashboard_view(initial)
     stats, charts = stats_and_charts(initial)
     with gr.Blocks(title='Tunix · Inference optimization', analytics_enabled=False) as demo:
@@ -200,6 +251,7 @@ def create_workbench():
                     gr.HTML('<div class="landing-copy"><div class="eyebrow">YOUR MODEL. YOUR HARDWARE. BETTER TOGETHER.</div><h1>Find your model’s<br>next gear.</h1><p>Analyze your model + hardware, test configurations, and find the fastest correct inference profile.</p></div>')
                     open_button = gr.Button('Open Workbench  →', variant='primary', elem_classes=['cta'])
                     gr.HTML('<div class="small-note">T4-first MVP · real measurements · strict quality gates</div>')
+                    gr.Code('python -m pip install -e .\ntunix doctor\ntunix init\ntunix report --replay',language='shell',label='Install from the Tunix checkout · VS Code terminal',interactive=False)
                 with gr.Column(scale=5):
                     gr.HTML(f'<div class="art"><div class="art-chip chip-a">↗ &nbsp; Measure the baseline</div><div class="art-chip chip-b">✓ &nbsp; Check correctness</div>{MARK}<div class="art-label">INTELLIGENCE, IN THE LOOP.</div><div class="art-chip chip-c">◎ &nbsp; Test. Compare. Refine.</div></div>')
             landing_stats = gr.HTML(stats)
@@ -212,10 +264,14 @@ def create_workbench():
                     home_button = gr.Button('← Overview', size='sm')
             gr.HTML('<div class="workflow"><strong>01 Configure</strong><i>→</i><span>02 Optimize</span><i>→</i><span>03 Compare</span><i>→</i><span>04 Validate</span><i>→</i><span>05 Apply</span></div>')
             snapshot = gr.State(view['snapshot'])
+            with gr.Row():
+                sessions=gr.Dropdown(session_choices(),value=default_selection,label='Evidence session',allow_custom_value=False)
+                upload=gr.File(label='Import benchmark results · ZIP, up to 32 MiB',file_types=['.zip'],type='filepath')
+            import_status=gr.Textbox(label='Import status',interactive=False,lines=2)
             with gr.Row(equal_height=True):
                 with gr.Column(scale=7, elem_classes=['config-card']):
                     gr.Markdown('### Configure your optimization')
-                    mode = gr.Radio([REPLAY,LIVE], value=default_mode, label='Execution environment')
+                    mode = gr.Radio([REPLAY,LIVE,IMPORTED], value=default_mode, label='Execution environment')
                     with gr.Row():
                         model = gr.Dropdown([( 'Llama 3.2 · 1B Instruct', MODEL)], value=MODEL, label='Supported model', allow_custom_value=False)
                         workload = gr.Dropdown([WORKLOAD], value=WORKLOAD, label='Workload', allow_custom_value=False)
@@ -259,24 +315,31 @@ def create_workbench():
                     refresh = gr.Button('Refresh saved evidence')
         gr.HTML('<div class="footer-note"><span>Tunix · intelligence, measured.</span><span>T4 / Llama MVP · no automatic activation</span></div>')
 
-        def render(current_mode=REPLAY):
-            data = app.load_dashboard_data(ROOT/'results' if current_mode == REPLAY else app.RESULTS_DIR, follow_session=current_mode == LIVE)
-            current = app.build_dashboard_view(data)
-            cards, graphs = stats_and_charts(data)
-            label = ('SAVED T4 REPLAY · no live Meta optimization' if current_mode == REPLAY else 'CONNECTED T4 MODE · evidence below is saved until a new run completes')
-            return (cards, graphs, status_panel(data), current['snapshot'], current['profile_rows'], current['winner_markdown'], current['banner'], current['baseline_rows'], current['rejection_rows'], current['agent_rows'], current['apply_summary'], pipeline_html(data), '<div class="source-note">'+label+'</div>')
+        def render(selection,current_mode=REPLAY):
+            return view_outputs(selection,current_mode)
         outputs = [stat_cards,chart,status,snapshot,profiles,winner,banner,baselines,rejections,agent_log,apply_summary,pipeline_view,source]
         open_button.click(lambda:(gr.update(visible=False),gr.update(visible=True)),outputs=[landing,workbench],api_name=False)
         home_button.click(lambda:(gr.update(visible=True),gr.update(visible=False)),outputs=[landing,workbench],api_name=False)
         def configured(*args):
             message = run_configured(*args)
             return message, '', ''
-        optimize_button.click(configured, inputs=[mode,model,workload,meta,hf],outputs=[operation,meta,hf],api_name=False).then(render,inputs=mode,outputs=outputs,api_name=False)
-        replay_button.click(lambda:('Verified saved T4 evidence loaded. No Meta API request or new GPU run.',gr.update(value=REPLAY)),outputs=[operation,mode],api_name=False).then(render,inputs=mode,outputs=outputs,api_name=False)
+        optimize_button.click(configured, inputs=[mode,model,workload,meta,hf],outputs=[operation,meta,hf],api_name=False).then(lambda mode,selected:gr.update(value=':local' if mode==LIVE else selected),inputs=[mode,sessions],outputs=sessions,api_name=False).then(render,inputs=[sessions,mode],outputs=outputs,api_name=False)
+        replay_button.click(lambda:('Verified saved T4 evidence loaded. No Meta API request or new GPU run.',gr.update(value=REPLAY),gr.update(value=':bundled')),outputs=[operation,mode,sessions],api_name=False).then(render,inputs=[sessions,mode],outputs=outputs,api_name=False)
         detect_button.click(runtime_status,outputs=hardware,api_name=False)
-        refresh.click(render,inputs=mode,outputs=outputs,api_name=False)
-        mode.change(render,inputs=mode,outputs=outputs,api_name=False)
-        confirm_button.click(lambda state,token:(confirm_with_token(state,token),''),inputs=[snapshot,hf],outputs=[confirmation,hf],api_name=False).then(render,inputs=mode,outputs=outputs,api_name=False)
+        refresh.click(render,inputs=[sessions,mode],outputs=outputs,api_name=False)
+        mode.change(render,inputs=[sessions,mode],outputs=outputs,api_name=False)
+        sessions.change(render,inputs=[sessions,mode],outputs=outputs,api_name=False)
+        def uploaded(path):
+            try:
+                selection,values=import_upload(path)
+                message=('Imported synthetic data - NOT measured GPU results.' if values[3]['session_status'].get('kind')=='synthetic' else
+                         'Imported GPU results. Original bytes preserved; validation recomputed. No live Meta call or full approval.')
+                return (gr.update(choices=session_choices(),value=selection),gr.update(value=IMPORTED),message)+values
+            except (ValueError,OSError,TypeError,KeyError) as exc:
+                raise gr.Error('Import rejected: '+str(exc)) from None
+        upload.upload(uploaded,inputs=upload,outputs=[sessions,mode,import_status]+outputs,api_name='import_benchmark_results')
+        demo.load(lambda:gr.update(choices=session_choices()),outputs=sessions,api_name=False)
+        confirm_button.click(lambda state,token:(confirm_with_token(state,token),''),inputs=[snapshot,hf],outputs=[confirmation,hf],api_name=False).then(render,inputs=[sessions,mode],outputs=outputs,api_name=False)
         apply_button.click(app.safe_apply,inputs=snapshot,outputs=apply_result,api_name=False)
         export_button.click(export_candidate,inputs=snapshot,outputs=download,api_name=False)
     return demo

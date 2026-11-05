@@ -11,6 +11,12 @@ tunix optimize
 tunix report
 ```
 
+**Colab → Windows demo:** `tunix export --output tunix-results.zip`, download
+the ZIP, then use **Import benchmark results** in the workbench. Imports are
+separate, byte-preserving sessions with locally recomputed gates, explicitly
+**Imported GPU results**, never live Meta optimization. [Exact Colab and
+Windows transfer commands](COLAB_TRANSFER.md).
+
 Live commands require the supported CUDA T4 environment, GPU dependencies,
 gated model access and credentials. For the no-GPU saved-results demo use
 `tunix report --replay --port 7865`. [Developer installation and exact command

@@ -92,6 +92,11 @@ workbench. CLI credentials come only from environment variables.
   evidence, Meta steps (if present), validation and no approved winner.
   `--replay` explicitly switches to the bundled original V2 T4 data; it is
   never presented as a new experiment or live Meta call.
+- `tunix export --output tunix-results.zip`: packages the current measured
+  session with an integrity manifest and available metadata. Use `--session
+  PATH` for an older Colab results directory. Refuses existing output files;
+  no GPU/API call or approval is implied. See COLAB_TRANSFER.md for the ZIP
+  upload-to-workbench workflow, archive limits and exact notebook cells.
 
 Paths in `tunix.json` resolve relative to that file, independent of the
 installation location. Results are stored per run, with a `current_session`

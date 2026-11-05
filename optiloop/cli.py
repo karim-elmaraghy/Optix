@@ -118,7 +118,7 @@ def launch_report(results, port, browser=True, replay=False):
     # UI passes explicit paths, so importing app previously is safe too.
     demo = app.create_app()
     print(f'Tunix report: http://127.0.0.1:{port} — data: {results}')
-    demo.launch(server_name='127.0.0.1',server_port=port,share=False,inbrowser=browser,
+    demo.launch(server_name='127.0.0.1',server_port=port,share=False,inbrowser=browser,max_file_size="32mb",
                 favicon_path=str(Path(app.__file__).parent/'assets'/'optiloop-mark.svg'),css=app.CSS)
 
 
@@ -130,10 +130,13 @@ def main(argv=None):
     init=sub.add_parser('init',help='Create credential-free tunix.json in your project')
     init.add_argument('--config',default='tunix.json')
     init.add_argument('--results-dir',default='.tunix/results')
-    for name in ('benchmark','optimize','report'):
-        cmd=sub.add_parser(name,help={'benchmark':'Measure real Gate 1 profiles (3 repeats)','optimize':'Run real baselines + strict quality gates + Meta search','report':'Launch local dashboard for this project'}[name])
+    for name in ('benchmark','optimize','report','export'):
+        cmd=sub.add_parser(name,help={'benchmark':'Measure real Gate 1 profiles (3 repeats)','optimize':'Run real baselines + strict quality gates + Meta search','report':'Launch local dashboard for this project','export':'Package the current measured run as a byte-preserving ZIP'}[name])
         cmd.add_argument('--config',default='tunix.json')
         if name=='optimize': cmd.add_argument('--budget',type=int,choices=range(1,9),default=8)
+        if name=='export':
+            cmd.add_argument('--session',help='Original results/session directory (legacy Colab)')
+            cmd.add_argument('--output',default='tunix-results.zip',help='New ZIP path; never overwrites')
         if name=='report':
             cmd.add_argument('--replay',action='store_true',help='Explicitly view bundled measured V2 results instead of project results')
             cmd.add_argument('--port',type=int,default=7860)
@@ -160,8 +163,15 @@ def main(argv=None):
         if args.command=='report' and args.replay:
             results=Path(__file__).resolve().parents[1]/'results'
             print('SAVED V2 REPLAY — not a new benchmark or live Meta API optimization.')
+        elif args.command=='export' and args.session:
+            results=Path(args.session)
         else:
             _,results=project_config(args.config)
+        if args.command=='export':
+            from .archive import export_archive
+            output=export_archive(results,args.output,session=args.session)
+            print('Exported '+str(output)+' - original evidence preserved; no approval or new run implied.')
+            return 0
         if args.command=='report':
             if not 1<=args.port<=65535: raise ValueError('port must be in 1..65535')
             launch_report(results,args.port,not args.no_browser,replay=args.replay)
