@@ -52,20 +52,34 @@ def parse_proposal(text, remaining):
     return obj
 
 
-def meta_completion(messages):
+def meta_response(messages):
+    """Real transport; return only credential-free response metadata and text."""
     key = os.environ.get('MODEL_API_KEY')
     if not key:
         raise RuntimeError('MODEL_API_KEY unavailable')
     body = json.dumps(dict(model=os.environ.get('META_MODEL', 'muse-spark-1.3'),
-                           messages=messages, temperature=0, max_tokens=1024)).encode()
+                           messages=messages, max_completion_tokens=2048)).encode()
     req = urllib.request.Request('https://api.meta.ai/v1/chat/completions', data=body,
                                  headers={'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'})
     with urllib.request.urlopen(req, timeout=45) as response:
         result = json.load(response)
+        status = getattr(response, 'status', 200)
     choice = result['choices'][0]
     if choice.get('finish_reason') != 'stop':
         raise ValueError('incomplete Meta response')
-    return choice['message']['content']
+    content = choice['message']['content']
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError('empty Meta response')
+    # Do not retain arbitrary headers, error bodies, or the authentication key.
+    if key in content:
+        raise ValueError('credential in response')
+    return dict(content=content, http_status=status, model=result.get('model'),
+                requested_model=os.environ.get('META_MODEL', 'muse-spark-1.3'),
+                response_id=result.get('id'), finish_reason=choice['finish_reason'])
+
+
+def meta_completion(messages):
+    return meta_response(messages)['content']
 
 
 def propose(remaining, history, completion=None):
