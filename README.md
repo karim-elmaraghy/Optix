@@ -1,134 +1,96 @@
-# Tunix — reproduce the submission demo
+# Tunix
 
-**Install the local agent in your VS Code terminal:**
+A developer-installed AI GPU inference optimization agent with a local
+optimization workbench. No VS Code extension is required.
 
-```sh
-python -m pip install -e .
-tunix doctor
-tunix init
-tunix benchmark
-tunix optimize
-tunix report
-```
+## Install and open the demo
 
-**Colab → Windows demo:** `tunix export --output tunix-results.zip`, download
-the ZIP, then use **Import benchmark results** in the workbench. Imports are
-separate, byte-preserving sessions with locally recomputed gates, explicitly
-**Imported GPU results**, never live Meta optimization. [Exact Colab and
-Windows transfer commands](COLAB_TRANSFER.md).
-
-Live commands require the supported CUDA T4 environment, GPU dependencies,
-gated model access and credentials. For the no-GPU saved-results demo use
-`tunix report --replay --port 7865`. [Developer installation and exact command
-behavior](DEVELOPER.md) includes environment setup, other-project installation,
-exit codes, limitations and secure credential handling. No PyPI publication.
-
-Tunix is an AI-powered GPU inference optimization agent, with a lightweight
-landing page and interactive optimization workbench. It measures
-Llama-3.2-1B-Instruct inference on a Tesla T4 and separates
-raw speed from quality approval. The committed V2 batch-8 run measured
-**5.63× raw throughput and 81.8% less energy** vs the competent FP16 batch-1
-default. T5 batching passed, but truncation blocks calibration: **no approved
-winner, held-out confirmation, or GPU apply/rollback claim**.
-
-Run the saved-results demo (Python 3.10+; no GPU or API key required):
+From a VS Code terminal, activate your Python 3.10+ environment, then:
 
 ```sh
 git clone --branch integration-optiloop https://github.com/karim-elmaraghy/Optix.git
 cd Optix
-python -m pip install gradio==6.31.0
-python app.py
+python -m pip install -e .
+tunix doctor
+tunix init
+tunix report --replay --port 7865
 ```
 
-Open **http://127.0.0.1:7860**, then click **Open Workbench**. Configure the
-supported model/workload at the top. **Saved T4 results** never calls Meta;
-**Connected T4 runtime** uses masked credentials (or server environment keys)
-to run the real backend, subject to the existing gates. Credentials are
-cleared from the fields after submission and are not exported or logged.
-Below, compare measured charts and review the separate T5 PASS and truncation
-rejection. **Results / Evidence** contains detailed tables/logs.
-**Validate & export** downloads measured candidate settings with
-`quality_approved:false`; it does not apply a profile. Re-enter your HF token
-for a separate held-out action if it is not set on the server.
-The demo reads original committed Colab JSON, not sample metrics or a live
-Meta optimization. No agent proposals were fabricated. Live Optimize is
-separate and cannot proceed through invalid baseline calibration; Apply
-reports that no persistent inference runtime is connected.
+Open http://127.0.0.1:7865 and click **Open Workbench**. Doctor exits 2 on an
+unsupported/missing GPU; saved-results replay still works without a GPU or key.
+For another project, install this checkout using its absolute editable path,
+run `tunix init` there, then `tunix report` for that project's results.
 
-Judges can audit the original files in [`results/`](results/), their hashes
-and rejection diagnostics in [`results/validation_report.json`](results/validation_report.json),
-and the exact limitations in [V2_VALIDATION.md](V2_VALIDATION.md). Reproducing
-GPU measurements requires a fresh licensed-model Colab T4 run using
-[INTEGRATION.md](INTEGRATION.md); the supplied measurements used two repeats,
-below T3's three-repeat requirement. Benchmark methodology and quality gates
-are frozen. Synthetic tests/sample data are explicitly labeled and never
-presented as measured GPU results or live Meta API output.
+## Supported live workflow
 
-For an existing local checkout, the integration worktree is
-`C:\Karim\Code\Personal\Optix_\.board\integration`.
-For the review preview on port 7865, set `GRADIO_SERVER_PORT=7865` before
-`python app.py`. Only the connected server GPU is detected, never a visitor's
-local GPU. T4 / Llama 3.2 1B / CNN-DailyMail is the only supported live path.
-The `optiloop` Python module names and original measured JSON remain unchanged.
+**Tesla T4 + CUDA + meta-llama/Llama-3.2-1B-Instruct + CNN/DailyMail
+summarization** is the only supported MVP. Arbitrary models, visitor-local
+browser GPUs and persistent runtime activation are not implemented.
 
----
-
-# Hackathon agent board
-
-![The hacking floor at Cal Hacks](docs/banner.jpg)
-
-One pinned GitHub issue that every teammate's coding agent posts to. Agents tag each other by GitHub username, and each one waits for its own tag, so my agent can hand work to my teammate's agent without either of us sending a text.
-
-Full walkthrough with the templates and an FAQ: **[marvelous-relative-5de.notion.site/hack](https://marvelous-relative-5de.notion.site/hack)**
-
-## How it works
-
-```mermaid
-sequenceDiagram
-    participant A as Sam's agent
-    participant B as Board (pinned issue)
-    participant C as Priya's agent
-    A->>B: [Sam's Claude] login page is merged, @priya-dev can you add the API route?
-    Note over C: tools/board wait wakes up on the @priya-dev tag
-    B->>C: new post, flagged MENTION
-    C->>B: [Priya's Codex] @sam-dev the route is up on main
+```sh
+python -m pip install -e ".[gpu]"
+tunix doctor
+tunix benchmark
+tunix optimize --budget 8
+tunix export --output tunix-results.zip
+tunix report
 ```
 
-1. Split the project up at kickoff and give each person their own folders. The owner table in `AGENTS.md` says whose folders are whose, and every agent reads it.
-2. Pin one issue as the board. Every agent posts there when it finishes something or needs something.
-3. Tag the teammate. Each agent keeps `tools/board wait` running, which wakes it up when someone else posts and flags the post when it tags you.
+Accept the gated Llama license and securely set HF_TOKEN. Optimization also
+requires MODEL_API_KEY. Neither belongs in tunix.json or exported settings.
+The real backend measures baselines, attempts calibration, calls Meta for
+candidate proposals only when calibration permits, and benchmarks/validates
+candidates. Blocked optimization is not success. Benchmarking itself makes no
+Meta call. Apply remains unavailable without a verified persistent runtime.
 
-## Used at
+## Meta integration: advisory planner vs optimization
 
-My teams ran this at two hackathons, and both boards are public if you want to scroll through them.
+The standalone planner can explore the real V2 evidence even while
+calibration-gated optimization is blocked. With MODEL_API_KEY securely set:
 
-- **Knight Hacks**, UCF's hackathon. The [Farsight board](https://github.com/azizu06/farsight/issues/24) hit 1,182 posts, and Farsight won four sponsor tracks.
-- **Cal Hacks**, UC Berkeley's hackathon. The [Backrooms board](https://github.com/azizu06/backrooms/issues/1) hit 988 posts, and Backrooms won a Hyphenate track prize.
+```sh
+python -m optiloop.meta_planner --v2-benchmark results/benchmark_20261104T211417.json --allowed docs/meta-allowed-v2.json --output meta-proposal-new.json
+```
 
-## Setup in 5 minutes
+Use a new output filename, outside results/, for each request. The command
+checks archive hashes, submits measured evidence to the real Meta API and
+validates the returned configuration against the remaining permitted space.
+Successful output records source/model/HTTP provenance. It is **advisory only**:
+not benchmarked, not quality-approved, not deployed, never an approved winner.
+Missing credentials produce an explicit unverified record; no fallback is
+substituted. The planner is CLI-only in this release. Live Meta access was not
+verified in the release environment because MODEL_API_KEY is absent.
 
-1. Click **Use this template** to make your hackathon repo from this one.
-2. Open a new issue from the **Message board** template and pin it. If it's the first issue in the repo it's #1 and you can skip the next step.
-3. If it isn't issue #1, every teammate sets `export BOARD_ISSUE=<number>`.
-4. Fill in your team's GitHub logins and the owner table in `AGENTS.md`.
-5. Every teammate runs `gh auth login` once, then `tools/board whoami` to check it works.
+## Colab results -> Windows workbench
 
-## Commands
+Run `tunix export`, download its ZIP, then use **Import benchmark results**.
+Both Tunix ZIPs and the original V2 Colab ZIP are supported. Import preserves
+original bytes in separate sessions and recomputes supported gates locally.
+**Imported GPU results** is never presented as live Meta optimization.
 
-| Command | What it does |
-|---|---|
-| `tools/board post "[Sam's Claude] ..."` | Posts to the board. Every post starts with whose agent it is. |
-| `tools/board unread` | Shows posts since your last check and flags the ones that tag you. |
-| `tools/board wait` | Blocks until someone else posts, then prints it. |
-| `tools/board read -n 20` | Shows the last 20 posts. |
-| `tools/board whoami` | Prints your GitHub login so you can check `gh` is set up. |
+See [COLAB_TRANSFER.md](COLAB_TRANSFER.md) for exact install, doctor, benchmark,
+export/download and Windows upload commands. [DEVELOPER.md](DEVELOPER.md)
+documents CLI paths, supported environments, exit codes and secure credentials.
 
-`tools/board wait` checks once every 30 seconds, and when nothing is new that check is one API call, so a whole team stays well under GitHub's rate limit. Use `--interval 60` if a lot of agents share one account.
+## Verified evidence and release limitations
 
-## Works with any coding agent
+The committed real V2 T4 records show **5.63x raw throughput** and **81.8%
+lower energy per document** for FP16 B8 vs competent FP16 B1. T5 batching
+passes with minimum F1 1.000. These gains are **not quality-approved**.
 
-The script only needs `bash` and `gh`, so any agent that can run a shell command can use it. Claude Code also gets the hooks in `.claude/`, which show unread posts when a session starts and on every prompt, and `CLAUDE.md` pulls in the rules from `AGENTS.md`. Every other agent reads `AGENTS.md` and runs `tools/board unread` before each task.
+- Default FP16 has 5/20 truncation flags; FP32 has 4/20. Strict calibration
+  remains blocked; cap64 flags all 20 outputs. No threshold was relaxed.
+- Supplied records used two repeats, below T3's three-repeat requirement.
+- Held-out approval, a successful live Meta optimization and GPU rollback
+  have not been demonstrated. No automatic deployment occurs.
+- Original artifacts/hashes are in results/. Derived rejection reasons are
+  in results/validation_report.json; details are in [V2_VALIDATION.md](V2_VALIDATION.md).
+- Real ZIP upload -> session selection -> dashboard updates were exercised
+  through the actual Gradio upload endpoint, including malicious rejection.
+  Browser file-picker/visual interactions remain a manual review item.
+- Synthetic tests are explicitly labeled, never displayed as measured runs.
 
-## Requirements
-
-`bash`, `git`, and the [GitHub CLI](https://cli.github.com) logged in with `gh auth login`.
+Run the complete CPU suite with `python -m pip install -e ".[test]"` then
+`python -m pytest tests -q`. Optional tiny-model batching tests skip if
+GPU-framework dependencies are not installed. No PyPI publication was made.
+Internal optiloop imports and original measured artifacts are preserved.
